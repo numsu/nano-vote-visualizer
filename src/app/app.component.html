@@ -1,7 +1,8 @@
 <div class="content">
 	<div class="header">
-		<h1>Nano election visualization</h1>
-		<label for="fps">FPS: {{ fps }}</label><input id="fps" type="range" min="0" max=60 step=1 [value]="fps" (input)="changeFps($event)">
+		<h1>Live Nano election visualization</h1>
+		<span>Every line is a block waiting to be validated. When the quorum reaches 100%, the block is confirmed. The graph displays data from the last ten minutes.</span><br><br>
+		<label for="fps">Refresh rate (FPS): {{ fps }}</label><input id="fps" type="range" min="0" max=60 step=1 [value]="fps" (input)="changeFps($event)">
 	</div>
 
 	<div id="visualization" #visualization></div>
@@ -34,5 +35,11 @@
 				</tr>
 			</table>
 		</div>
+	</div>
+
+	<div class="credits">
+		<span>Made by <a href="https://github.com/numsu" target="_blank">Numsu</a></span><br>
+		If you appreciate my work in the community, please consider donating Nano:<br>
+		nano_1iic4ggaxy3eyg89xmswhj1r5j9uj66beka8qjcte11bs6uc3wdwr7i9hepm
 	</div>
 </div>

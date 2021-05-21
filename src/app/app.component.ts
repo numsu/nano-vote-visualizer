@@ -74,7 +74,6 @@ export class AppComponent implements OnInit, OnDestroy {
 			const block = stoppedElection.message.hash;
 			this.deleteFromData(block);
 		});
-		this.startClearDataInterval();
 	}
 
 	async deleteFromData(block: string) {
@@ -89,7 +88,7 @@ export class AppComponent implements OnInit, OnDestroy {
 			title: '',
 			id: '1',
 			class: 'chart',
-			width: window.innerWidth,
+			width: window.innerWidth - 17,
 			height: 600,
 			cursor: {
 				show: false,
@@ -151,13 +150,17 @@ export class AppComponent implements OnInit, OnDestroy {
 			if (this.data.size > 0) {
 				const x = [];
 				const y = [];
+				const now = new Date().getTime();
+				const tooOld = now - (1000 * 60 * 10); // Ten minutes
 				Array.from(this.data.values()).forEach(i => {
-					x.push(i.index);
-					y.push(i.quorum);
+					if (tooOld < i.added) { // Render only the latest ten minutes
+						x.push(i.index);
+						y.push(i.quorum);
+					}
 				});
 				this.chart.setData([x, y]);
 
-				const elapsedTimeInSeconds = (new Date().getTime() - this.startTime.getTime()) / 1000;
+				const elapsedTimeInSeconds = (now - this.startTime.getTime()) / 1000;
 				this.cps = (this.confirmations / elapsedTimeInSeconds).toFixed(4);
 
 				this.changeDetectorRef.markForCheck();
@@ -170,19 +173,6 @@ export class AppComponent implements OnInit, OnDestroy {
 			clearInterval(this.chartUpdateInterval);
 			this.chartUpdateInterval = undefined;
 		}
-	}
-
-	startClearDataInterval() {
-		this.clearDataInterval = setInterval(() => {
-			const toDelete = [];
-			const tooOld = new Date().getTime() - (1000 * 60 * 10); // Ten minutes
-			for (const [key, value] of this.data.entries()) {
-				if (tooOld > value.added) {
-					toDelete.push(key);
-				}
-			}
-			toDelete.forEach(key => this.data.delete(key));
-		}, 1000 * 5);
 	}
 
 }
