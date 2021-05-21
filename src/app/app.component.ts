@@ -1,8 +1,9 @@
+import { tools } from 'nanocurrency-web';
 import uPlot from 'uplot';
 
-import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, OnDestroy, OnInit, ViewChild } from '@angular/core';
 
-import { NanoWebsocketService } from './ws.service';
+import { ConfirmationMessage, NanoWebsocketService } from './ws.service';
 
 @Component({
 	selector: 'app-root',
@@ -12,82 +13,78 @@ import { NanoWebsocketService } from './ws.service';
 })
 export class AppComponent implements OnInit, OnDestroy {
 
-	@ViewChild('visualization')
-	visualization: HTMLElement;
+	@ViewChild('visualization') visualization: HTMLElement;
+	chart: uPlot;
+	data = new Map<string, { index: number, quorum: number, added: number }>();
+	chartUpdateInterval;
+	clearDataInterval;
+	fps = 24;
 
-	data = new Map<number, number>();
-	recentlyRemoved = new Set<string>();
+	confirmations = 0;
+	blocks = 0;
+	stoppedElections = 0;
+	cps = '0';
+	startTime = new Date();
+	currentTime = new Date();
 
-	interval;
+	latestConfirmations: ConfirmationMessage[] = [];
 
-	indexing = new Map<string, number>();
-	index = 0;
-	nextIndex = () => {
-		return this.index++;
-	}
-
-	constructor(private ws: NanoWebsocketService) {
+	constructor(private ws: NanoWebsocketService,
+				private changeDetectorRef: ChangeDetectorRef) {
 	}
 
 	ngOnDestroy() {
-		clearInterval(this.interval);
+		this.stopInterval();
+		if (this.clearDataInterval) {
+			clearInterval(this.clearDataInterval);
+		}
 	}
 
 	async ngOnInit() {
 		this.build();
-		(await this.ws.subscribeToVotes()).subscribe(vote => {
+		(await this.ws.subscribeToVotes()).subscribe(async vote => {
 			const block = vote.message.blocks[0];
-
-			if (this.recentlyRemoved.has(block)) {
-				return;
-			}
-
 			const principalWeight = this.ws.principalWeights.get(vote.message.account);
-			const principalWeightPercent = principalWeight / this.ws.confirmationQuorum * 100;
+			const principalWeightPercent = principalWeight / this.ws.quorumDelta * 100;
 
-			let index = this.indexing.get(block);
-			let previous;
-			if (index) {
-				previous = this.data.get(index);
-			} else {
-				index = this.nextIndex();
-			}
-
-			if (previous) {
-				const newQuorum = previous + principalWeightPercent;
-				if (newQuorum < 100) {
-					this.data.set(index, previous + principalWeightPercent);
-				} else {
-					this.deleteFromData(index, block);
+			let item = this.data.get(block);
+			if (item) {
+				item.quorum = item.quorum + principalWeightPercent;
+				if (item.quorum >= 100) {
+					this.deleteFromData(block);
 				}
 			} else {
-				this.data.set(index, principalWeightPercent);
-				this.indexing.set(block, index);
+				this.data.set(block, { index: this.blocks++, quorum: principalWeightPercent, added: new Date().getTime() });
 			}
 		});
-		(await this.ws.subscribeToConfirmations()).subscribe(confirmation => {
+		(await this.ws.subscribeToConfirmations()).subscribe(async confirmation => {
 			const block = confirmation.message.election_info.blocks[0];
-			const index = this.indexing.get(block);
-			this.deleteFromData(index, block);
+			this.deleteFromData(block);
+			this.confirmations++;
+
+			const nanoAmount = Number(tools.convert(confirmation.message.amount, 'RAW', 'NANO')).toFixed(8);
+			const trailingZeroesCleared = String(+nanoAmount / 1);
+			confirmation.message.amount = trailingZeroesCleared;
+			this.latestConfirmations.unshift(confirmation.message);
+			if (this.latestConfirmations.length > 20) {
+				this.latestConfirmations.shift();
+			}
 		});
-		(await this.ws.subscribeToStoppedElections()).subscribe(stoppedElection => {
+		(await this.ws.subscribeToStoppedElections()).subscribe(async stoppedElection => {
 			const block = stoppedElection.message.hash;
-			const index = this.indexing.get(block);
-			this.deleteFromData(index, block);
+			this.deleteFromData(block);
 		});
+		this.startClearDataInterval();
 	}
 
-	deleteFromData(index: number, block: string) {
-		this.data.set(index, null);
-		this.indexing.delete(block);
-		this.recentlyRemoved.add(block);
-		setTimeout(() => {
-			this.recentlyRemoved.delete(block);
-		}, 1000);
+	async deleteFromData(block: string) {
+		if (this.data.delete(block)) {
+			this.stoppedElections++;
+		}
 	}
 
-	build() {
-		const bars = uPlot.paths.bars({ align: 1, size: [1, Infinity] });
+	async build() {
+		const bars = uPlot.paths.bars({ align: 1, size: [1, 100] });
 		const opts: uPlot.Options = {
 			title: '',
 			id: '1',
@@ -95,6 +92,7 @@ export class AppComponent implements OnInit, OnDestroy {
 			width: window.innerWidth,
 			height: 600,
 			cursor: {
+				show: false,
 			},
 			scales: {
 				'x': {
@@ -114,33 +112,77 @@ export class AppComponent implements OnInit, OnDestroy {
 						width: 1 / devicePixelRatio,
 						stroke: "#2c3235",
 					},
-				}
+				},
 			],
 			series: [
 				{},
 				{
-					label: 'Quorum',
+					label: 'Quorum %',
 					paths: bars,
-					pxAlign: true,
+					pxAlign: false,
+					spanGaps: false,
 					points: {
-						show: false
+						show: false,
 					},
 					fill: 'rgba(255, 0, 0, 0.6)',
 					width: 1 / devicePixelRatio,
-					value: (self, rawValue, seriesIdx, idx) => rawValue ? rawValue.toFixed(2) + ' %' : '--',
 					max: 100,
 				},
-			]
+			],
 		};
 
-		const chart = new uPlot(opts, [[], []], document.body);
-		this.interval = setInterval(() => {
+		this.chart = new uPlot(opts, [[], []], document.getElementById('visualization'));
+		this.startInterval();
+	}
+
+	changeFps(e: any) {
+		this.fps = e.target.value;
+		this.startInterval();
+	}
+
+	async startInterval() {
+		this.stopInterval();
+
+		if (this.fps == 0) {
+			return;
+		}
+
+		this.chartUpdateInterval = setInterval(async () => {
 			if (this.data.size > 0) {
-				const x = Array.from(this.data.keys());
-				const y = Array.from(this.data.values());
-				chart.setData([x, y]);
+				const x = [];
+				const y = [];
+				Array.from(this.data.values()).forEach(i => {
+					x.push(i.index);
+					y.push(i.quorum);
+				});
+				this.chart.setData([x, y]);
+
+				const elapsedTimeInSeconds = (new Date().getTime() - this.startTime.getTime()) / 1000;
+				this.cps = (this.confirmations / elapsedTimeInSeconds).toFixed(4);
+
+				this.changeDetectorRef.markForCheck();
 			}
-		}, 16.7);
+		}, 1000 / this.fps);
+	}
+
+	stopInterval() {
+		if (this.chartUpdateInterval) {
+			clearInterval(this.chartUpdateInterval);
+			this.chartUpdateInterval = undefined;
+		}
+	}
+
+	startClearDataInterval() {
+		this.clearDataInterval = setInterval(() => {
+			const toDelete = [];
+			const tooOld = new Date().getTime() - (1000 * 60 * 10); // Ten minutes
+			for (const [key, value] of this.data.entries()) {
+				if (tooOld > value.added) {
+					toDelete.push(key);
+				}
+			}
+			toDelete.forEach(key => this.data.delete(key));
+		}, 1000 * 5);
 	}
 
 }

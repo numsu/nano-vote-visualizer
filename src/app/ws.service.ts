@@ -14,7 +14,7 @@ export class NanoWebsocketService {
 
 	principals: Principal[] = [];
 	principalWeights = new Map<string, number>();
-	confirmationQuorum: number;
+	quorumDelta: number;
 
 	constructor(private http: HttpClient) {
 	}
@@ -28,7 +28,7 @@ export class NanoWebsocketService {
 				'action': 'confirmation_quorum'
 			}).toPromise();
 
-			this.confirmationQuorum = new BigNumber(tools.convert(quorumResponse.quorum_delta, 'RAW', 'NANO')).toNumber();
+			this.quorumDelta = new BigNumber(tools.convert(quorumResponse.quorum_delta, 'RAW', 'NANO')).toNumber();
 		}
 
 		const socket = webSocket<Vote>(this.wsUrl);

@@ -1,1 +1,38 @@
-<div #visualization></div>
+<div class="content">
+	<div class="header">
+		<h1>Nano election visualization</h1>
+		<label for="fps">FPS: {{ fps }}</label><input id="fps" type="range" min="0" max=60 step=1 [value]="fps" (input)="changeFps($event)">
+	</div>
+
+	<div id="visualization" #visualization></div>
+
+	<div class="stats-container">
+		<div class="stat-container">
+			<h2 class="stat-header">Active/Stopped elections</h2>
+			<span class="stat">{{ blocks - stoppedElections }} / {{ stoppedElections }}</span>
+		</div>
+		<div class="stat-container">
+			<h2 class="stat-header">Confirmations (CPS)</h2>
+			<span class="stat">{{ confirmations }} ({{ cps }})</span>
+		</div>
+	</div>
+
+	<div class="confirmations">
+		<h2 class="confirmations-header">Latest confirmations</h2>
+		<div class="confirmations-list">
+			<table class="confirmations-table" *ngIf="latestConfirmations.length">
+				<th>Account/Hash</th>
+				<th>Amount</th>
+				<tr *ngFor="let confirmation of latestConfirmations">
+					<td>
+						<a [href]="'https://nanolooker.com/account/' + confirmation.account" target="_blank">{{ confirmation.account }}</a><br>
+						<a [href]="'https://nanolooker.com/block/' + confirmation.hash" target="_blank">{{ confirmation.hash }}</a>
+					</td>
+					<td>
+						{{ confirmation.amount }}
+					</td>
+				</tr>
+			</table>
+		</div>
+	</div>
+</div>
