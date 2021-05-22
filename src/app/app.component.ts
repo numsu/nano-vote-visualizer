@@ -174,8 +174,7 @@ export class AppComponent implements OnInit, OnDestroy {
 				});
 				this.chart.setData([x, y]);
 
-				const fiveMinutesAgo = new Date().getTime() - 1000 * 60 * 5;
-				const elapsedTimeInSeconds = (now - Math.max(fiveMinutesAgo, this.startTime.getTime())) / 1000;
+				const elapsedTimeInSeconds = (now - this.startTime.getTime()) / 1000;
 				this.cps = (this.confirmations / elapsedTimeInSeconds).toFixed(4);
 
 				this.changeDetectorRef.markForCheck();
