@@ -15,7 +15,8 @@ export class AppComponent implements OnInit, OnDestroy {
 
 	@ViewChild('visualization') visualization: HTMLElement;
 	chart: uPlot;
-	data = new Map<string, { index: number, quorum: number, added: number }>();
+	data = new Map<string, DataItem>();
+	recentlyRemoved = new Set<string>();
 	chartUpdateInterval;
 	clearDataInterval;
 	fps = 24;
@@ -47,11 +48,16 @@ export class AppComponent implements OnInit, OnDestroy {
 			const principalWeight = this.ws.principalWeights.get(vote.message.account);
 			const principalWeightPercent = principalWeight / this.ws.quorumDelta * 100;
 
-			let item = this.data.get(block);
+			const item = this.data.get(block);
 			if (item) {
-				item.quorum = item.quorum + principalWeightPercent;
-				if (item.quorum >= 100) {
-					this.deleteFromData(block);
+				if (item.quorum !== null) {
+					item.quorum = item.quorum + principalWeightPercent;
+					if (item.quorum > 100) {
+						item.quorum = 100;
+					}
+				} else if (!this.recentlyRemoved.has(block)) {
+					this.data.delete(block);
+					this.data.set(block, { index: this.blocks++, quorum: principalWeightPercent, added: new Date().getTime() });
 				}
 			} else {
 				this.data.set(block, { index: this.blocks++, quorum: principalWeightPercent, added: new Date().getTime() });
@@ -59,7 +65,10 @@ export class AppComponent implements OnInit, OnDestroy {
 		});
 		(await this.ws.subscribeToConfirmations()).subscribe(async confirmation => {
 			const block = confirmation.message.election_info.blocks[0];
-			this.deleteFromData(block);
+			const item = this.data.get(block);
+			if (item) {
+				item.quorum = 100;
+			}
 			this.confirmations++;
 
 			const nanoAmount = Number(tools.convert(confirmation.message.amount, 'RAW', 'NANO')).toFixed(8);
@@ -72,13 +81,19 @@ export class AppComponent implements OnInit, OnDestroy {
 		});
 		(await this.ws.subscribeToStoppedElections()).subscribe(async stoppedElection => {
 			const block = stoppedElection.message.hash;
-			this.deleteFromData(block);
+			const item = this.data.get(block);
+			if (!item || item.quorum < 100) {
+				this.deleteFromData(block, item);
+			}
 		});
 	}
 
-	async deleteFromData(block: string) {
-		if (this.data.delete(block)) {
+	async deleteFromData(block: string, item: DataItem) {
+		if (item && item.quorum !== null) {
+			item.quorum = null;
 			this.stoppedElections++;
+			this.recentlyRemoved.add(block);
+			setTimeout(() => this.recentlyRemoved.delete(block), 2000);
 		}
 	}
 
@@ -151,16 +166,17 @@ export class AppComponent implements OnInit, OnDestroy {
 				const x = [];
 				const y = [];
 				const now = new Date().getTime();
-				const tooOld = now - (1000 * 60 * 10); // Ten minutes
+				const tooOld = now - (1000 * 60 * 5); // Five minutes
 				Array.from(this.data.values()).forEach(i => {
-					if (tooOld < i.added) { // Render only the latest ten minutes
+					if (tooOld < i.added) { // Render only the latest five minutes
 						x.push(i.index);
 						y.push(i.quorum);
 					}
 				});
 				this.chart.setData([x, y]);
 
-				const elapsedTimeInSeconds = (now - this.startTime.getTime()) / 1000;
+				const fiveMinutesAgo = new Date().getTime() - 1000 * 60 * 5;
+				const elapsedTimeInSeconds = (now - Math.max(fiveMinutesAgo, this.startTime.getTime())) / 1000;
 				this.cps = (this.confirmations / elapsedTimeInSeconds).toFixed(4);
 
 				this.changeDetectorRef.markForCheck();
@@ -175,4 +191,10 @@ export class AppComponent implements OnInit, OnDestroy {
 		}
 	}
 
+}
+
+export interface DataItem {
+	index: number;
+	quorum: number;
+	added: number;
 }

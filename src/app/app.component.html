@@ -1,7 +1,7 @@
 <div class="content">
 	<div class="header">
 		<h1>Live Nano election visualization</h1>
-		<span>Every line is a block waiting to be validated. When the quorum reaches 100%, the block is confirmed. The graph displays data from the last ten minutes.</span><br><br>
+		<span>Every line is a block waiting to be validated. When the quorum reaches 100%, the block is confirmed. The graph displays data from the last five minutes.</span><br><br>
 		<label for="fps">Refresh rate (FPS): {{ fps }}</label><input id="fps" type="range" min="0" max=60 step=1 [value]="fps" (input)="changeFps($event)">
 	</div>
 
@@ -10,10 +10,10 @@
 	<div class="stats-container">
 		<div class="stat-container">
 			<h2 class="stat-header">Active/Stopped elections</h2>
-			<span class="stat">{{ blocks - stoppedElections }} / {{ stoppedElections }}</span>
+			<span class="stat">{{ blocks - stoppedElections - confirmations }} / {{ stoppedElections }}</span>
 		</div>
 		<div class="stat-container">
-			<h2 class="stat-header">Confirmations (CPS)</h2>
+			<h2 class="stat-header">Confirmations (CPS avg. 5min)</h2>
 			<span class="stat">{{ confirmations }} ({{ cps }})</span>
 		</div>
 	</div>
