@@ -19,7 +19,7 @@ export class AppComponent implements OnInit, OnDestroy {
 	recentlyRemoved = new Set<string>();
 	chartUpdateInterval;
 	clearDataInterval;
-	fps = 24;
+	fps = 11;
 
 	confirmations = 0;
 	blocks = 0;
@@ -64,7 +64,7 @@ export class AppComponent implements OnInit, OnDestroy {
 			}
 		});
 		(await this.ws.subscribeToConfirmations()).subscribe(async confirmation => {
-			const block = confirmation.message.election_info.blocks[0];
+			const block = confirmation.message.hash;
 			const item = this.data.get(block);
 			if (item) {
 				item.quorum = 100;

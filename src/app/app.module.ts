@@ -1,3 +1,5 @@
+import { QRCodeModule } from 'angularx-qrcode';
+
 import { HttpClientModule } from '@angular/common/http';
 import { NgModule } from '@angular/core';
 import { BrowserModule } from '@angular/platform-browser';
@@ -14,6 +16,7 @@ import { NanoWebsocketService } from './ws.service';
 		BrowserModule,
 		AppRoutingModule,
 		HttpClientModule,
+		QRCodeModule,
 	],
 	providers: [
 		NanoWebsocketService,

@@ -26,6 +26,7 @@ body
 
 .stat-header
 	color: rgba(255, 0, 0, 0.6)
+	text-align: center
 
 .stat
 	color: #ccc
@@ -67,3 +68,24 @@ a
 	flex-direction: column
 	margin-top: 100px
 	padding-bottom: 50px
+
+@media (max-width: 768px)
+	.credits
+		font-size: 11px
+
+	.confirmations-table
+		width: 100wv
+		table-layout: fixed
+		whitespace: nowrap
+		overflow: hidden
+
+		td:first-child
+			max-width: 65vw
+			overflow: hidden
+			text-overflow: ellipsis
+
+	.stat-header
+		font-size: 16px
+
+	.stat
+		font-size: 18px

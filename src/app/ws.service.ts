@@ -9,8 +9,8 @@ import { Injectable } from "@angular/core";
 @Injectable()
 export class NanoWebsocketService {
 
-	wsUrl = 'ws://192.168.1.145:7078';
-	rpcUrl = 'http://192.168.1.145:7076';
+	wsUrl = 'wss://nanows.numsu.dev';
+	rpcUrl = 'https://nanoproxy.numsu.dev/proxy';
 
 	principals: Principal[] = [];
 	principalWeights = new Map<string, number>();
@@ -49,7 +49,7 @@ export class NanoWebsocketService {
 			'topic': 'confirmation',
 			'options': {
 				'confirmation_type': 'active',
-				'include_election_info': 'true',
+				'include_election_info': 'false',
 				'include_block': 'false',
 			},
 		} as any);
@@ -97,7 +97,6 @@ export interface ConfirmationMessage {
 	amount: string;
 	hash: string;
 	confirmation_type: string;
-	election_info: ConfirmationElectionInfo;
 }
 
 export interface ConfirmationElectionInfo {
