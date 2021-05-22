@@ -74,9 +74,8 @@ export class AppComponent implements OnInit, OnDestroy {
 			const nanoAmount = Number(tools.convert(confirmation.message.amount, 'RAW', 'NANO')).toFixed(8);
 			const trailingZeroesCleared = String(+nanoAmount / 1);
 			confirmation.message.amount = trailingZeroesCleared;
-			this.latestConfirmations.unshift(confirmation.message);
-			if (this.latestConfirmations.length > 20) {
-				this.latestConfirmations.shift();
+			if (this.latestConfirmations.unshift(confirmation.message) > 20) {
+				this.latestConfirmations.pop();
 			}
 		});
 		(await this.ws.subscribeToStoppedElections()).subscribe(async stoppedElection => {
