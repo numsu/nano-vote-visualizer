@@ -20,6 +20,7 @@ export class AppComponent implements OnInit, OnDestroy {
 	chartUpdateInterval;
 	clearDataInterval;
 	fps = 11;
+	timeframe = 5;
 
 	confirmations = 0;
 	blocks = 0;
@@ -97,13 +98,15 @@ export class AppComponent implements OnInit, OnDestroy {
 	}
 
 	async build() {
-		const bars = uPlot.paths.bars({ align: 1, size: [1, 100] });
+		const bars = uPlot.paths.bars({ align: 1, size: [1, 20] });
 		const opts: uPlot.Options = {
 			title: '',
 			id: '1',
 			class: 'chart',
 			width: window.innerWidth - 17,
 			height: 600,
+			padding: [20, 10, 0, -10],
+			pxAlign: false,
 			cursor: {
 				show: false,
 			},
@@ -153,6 +156,10 @@ export class AppComponent implements OnInit, OnDestroy {
 		this.startInterval();
 	}
 
+	changeTimeframe(e: any) {
+		this.timeframe = e.target.value;
+	}
+
 	async startInterval() {
 		this.stopInterval();
 
@@ -165,9 +172,9 @@ export class AppComponent implements OnInit, OnDestroy {
 				const x = [];
 				const y = [];
 				const now = new Date().getTime();
-				const tooOld = now - (1000 * 60 * 5); // Five minutes
+				const tooOld = now - (1000 * 60 * this.timeframe);
 				Array.from(this.data.values()).forEach(i => {
-					if (tooOld < i.added) { // Render only the latest five minutes
+					if (tooOld < i.added) {
 						x.push(i.index);
 						y.push(i.quorum);
 					}
