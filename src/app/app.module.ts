@@ -6,11 +6,13 @@ import { BrowserModule } from '@angular/platform-browser';
 
 import { AppRoutingModule } from './app-routing.module';
 import { AppComponent } from './app.component';
+import { OrderByPipe } from './order-by.pipe';
 import { NanoWebsocketService } from './ws.service';
 
 @NgModule({
 	declarations: [
 		AppComponent,
+		OrderByPipe,
 	],
 	imports: [
 		BrowserModule,

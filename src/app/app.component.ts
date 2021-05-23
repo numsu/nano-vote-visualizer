@@ -13,23 +13,27 @@ import { ConfirmationMessage, NanoWebsocketService } from './ws.service';
 })
 export class AppComponent implements OnInit, OnDestroy {
 
-	@ViewChild('visualization') visualization: HTMLElement;
-	chart: uPlot;
-	data = new Map<string, DataItem>();
-	recentlyRemoved = new Set<string>();
-	chartUpdateInterval;
-	clearDataInterval;
-	fps = 11;
-	timeframe = 5;
+	pageUpdateInterval: any;
 
-	confirmations = 0;
-	blocks = 0;
-	stoppedElections = 0;
-	cps = '0';
-	startTime = new Date();
-	currentTime = new Date();
+	electionChart: uPlot;
+	electionChartData = new Map<string, DataItem>();
+	electionChartRecentlyRemoved = new Set<string>();
 
 	latestConfirmations: ConfirmationMessage[] = [];
+	representativeStats = new Map<string, RepsetentativeStatItem>();
+
+	// User defined settings
+	fps: number;
+	timeframe: number;
+
+	// Counters
+	blocks = 0;
+	stoppedElections = 0;
+	confirmations = 0;
+	cps = '0';
+
+	startTime = new Date();
+
 
 	constructor(private ws: NanoWebsocketService,
 				private changeDetectorRef: ChangeDetectorRef) {
@@ -37,36 +41,36 @@ export class AppComponent implements OnInit, OnDestroy {
 
 	ngOnDestroy() {
 		this.stopInterval();
-		if (this.clearDataInterval) {
-			clearInterval(this.clearDataInterval);
-		}
 	}
 
 	async ngOnInit() {
+		this.initSettings();
 		this.build();
 		(await this.ws.subscribeToVotes()).subscribe(async vote => {
 			const block = vote.message.blocks[0];
 			const principalWeight = this.ws.principalWeights.get(vote.message.account);
 			const principalWeightPercent = principalWeight / this.ws.quorumDelta * 100;
 
-			const item = this.data.get(block);
+			const item = this.electionChartData.get(block);
 			if (item) {
 				if (item.quorum !== null) {
 					item.quorum = item.quorum + principalWeightPercent;
 					if (item.quorum > 100) {
 						item.quorum = 100;
 					}
-				} else if (!this.recentlyRemoved.has(block)) {
-					this.data.delete(block);
-					this.data.set(block, { index: this.blocks++, quorum: principalWeightPercent, added: new Date().getTime() });
+				} else if (!this.electionChartRecentlyRemoved.has(block)) {
+					this.electionChartData.delete(block);
+					this.electionChartData.set(block, { index: this.blocks++, quorum: principalWeightPercent, added: new Date().getTime() });
 				}
 			} else {
-				this.data.set(block, { index: this.blocks++, quorum: principalWeightPercent, added: new Date().getTime() });
+				this.electionChartData.set(block, { index: this.blocks++, quorum: principalWeightPercent, added: new Date().getTime() });
 			}
+
+			this.representativeStats.get(vote.message.account).voteCount++;
 		});
 		(await this.ws.subscribeToConfirmations()).subscribe(async confirmation => {
 			const block = confirmation.message.hash;
-			const item = this.data.get(block);
+			const item = this.electionChartData.get(block);
 			if (item) {
 				item.quorum = 100;
 			}
@@ -81,19 +85,37 @@ export class AppComponent implements OnInit, OnDestroy {
 		});
 		(await this.ws.subscribeToStoppedElections()).subscribe(async stoppedElection => {
 			const block = stoppedElection.message.hash;
-			const item = this.data.get(block);
+			const item = this.electionChartData.get(block);
 			if (!item || item.quorum < 100) {
 				this.deleteFromData(block, item);
 			}
 		});
+
+		this.ws.principals.forEach(principal => {
+			let alias = principal.alias;
+			if (principal.account == 'nano_3zapp5z141qpjipsb1jnjdmk49jwqy58i6u6wnyrh6x7woajeyme85shxewt') {
+				alias = '*** ' + alias;
+			}
+
+			this.representativeStats.set(principal.account, {
+				weight: this.ws.principalWeights.get(principal.account) / this.ws.quorumDelta,
+				alias,
+				voteCount: 0,
+			})
+		});
+	}
+
+	initSettings() {
+		this.fps = +localStorage.getItem('nv-fps') || 8;
+		this.timeframe = +localStorage.getItem('nv-timeframe') || 1;
 	}
 
 	async deleteFromData(block: string, item: DataItem) {
 		if (item && item.quorum !== null) {
 			item.quorum = null;
 			this.stoppedElections++;
-			this.recentlyRemoved.add(block);
-			setTimeout(() => this.recentlyRemoved.delete(block), 2000);
+			this.electionChartRecentlyRemoved.add(block);
+			setTimeout(() => this.electionChartRecentlyRemoved.delete(block), 2000);
 		}
 	}
 
@@ -140,24 +162,26 @@ export class AppComponent implements OnInit, OnDestroy {
 					points: {
 						show: false,
 					},
-					fill: 'rgba(255, 0, 0, 0.6)',
+					fill: 'rgba(74, 144, 226, 1)',
 					width: 1 / devicePixelRatio,
 					max: 100,
 				},
 			],
 		};
 
-		this.chart = new uPlot(opts, [[], []], document.getElementById('visualization'));
+		this.electionChart = new uPlot(opts, [[], []], document.getElementById('electionChart'));
 		this.startInterval();
 	}
 
 	changeFps(e: any) {
 		this.fps = e.target.value;
 		this.startInterval();
+		localStorage.setItem('nv-fps', String(this.fps));
 	}
 
 	changeTimeframe(e: any) {
 		this.timeframe = e.target.value;
+		localStorage.setItem('nv-timeframe', String(this.timeframe));
 	}
 
 	async startInterval() {
@@ -167,19 +191,19 @@ export class AppComponent implements OnInit, OnDestroy {
 			return;
 		}
 
-		this.chartUpdateInterval = setInterval(async () => {
-			if (this.data.size > 0) {
+		this.pageUpdateInterval = setInterval(async () => {
+			if (this.electionChartData.size > 0) {
 				const x = [];
 				const y = [];
 				const now = new Date().getTime();
 				const tooOld = now - (1000 * 60 * this.timeframe);
-				Array.from(this.data.values()).forEach(i => {
+				Array.from(this.electionChartData.values()).forEach(i => {
 					if (tooOld < i.added) {
 						x.push(i.index);
 						y.push(i.quorum);
 					}
 				});
-				this.chart.setData([x, y]);
+				this.electionChart.setData([x, y]);
 
 				const elapsedTimeInSeconds = (now - this.startTime.getTime()) / 1000;
 				this.cps = (this.confirmations / elapsedTimeInSeconds).toFixed(4);
@@ -190,9 +214,9 @@ export class AppComponent implements OnInit, OnDestroy {
 	}
 
 	stopInterval() {
-		if (this.chartUpdateInterval) {
-			clearInterval(this.chartUpdateInterval);
-			this.chartUpdateInterval = undefined;
+		if (this.pageUpdateInterval) {
+			clearInterval(this.pageUpdateInterval);
+			this.pageUpdateInterval = undefined;
 		}
 	}
 
@@ -202,4 +226,10 @@ export interface DataItem {
 	index: number;
 	quorum: number;
 	added: number;
+}
+
+export interface RepsetentativeStatItem {
+	weight: number;
+	alias: string;
+	voteCount: number;
 }

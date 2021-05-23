@@ -49,7 +49,7 @@ export class NanoWebsocketService {
 			'topic': 'confirmation',
 			'options': {
 				'confirmation_type': 'active',
-				'include_election_info': 'false',
+				'include_election_info': 'true',
 				'include_block': 'false',
 			},
 		} as any);
@@ -97,6 +97,7 @@ export interface ConfirmationMessage {
 	amount: string;
 	hash: string;
 	confirmation_type: string;
+	election_info: ConfirmationElectionInfo;
 }
 
 export interface ConfirmationElectionInfo {

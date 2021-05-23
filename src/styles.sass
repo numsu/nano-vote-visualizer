@@ -9,6 +9,9 @@ body
 .header
 	text-align: center
 
+	h1
+		color: rgba(74, 144, 226, 0.8)
+
 .content
 	flex: 1
 	flex-direction: column
@@ -20,6 +23,9 @@ body
 		height: 10px
 		margin-left: 10px
 
+#electionChart
+	overflow: hidden
+
 .stats-container
 	display: flex
 	flex-direction: row
@@ -30,9 +36,10 @@ body
 	display: flex
 	flex-direction: column
 	align-items: center
+	margin-bottom: 50px
 
 .stat-header
-	color: rgba(255, 0, 0, 0.6)
+	color: rgba(74, 144, 226, 0.8)
 	text-align: center
 
 .stat
@@ -42,32 +49,40 @@ body
 .u-series:first-child
 	display: none
 
-.confirmations
-	margin-top: 100px
+.table-section
 	display: flex
 	flex-direction: column
 	align-items: center
-	padding-bottom: 50px
+	padding-bottom: 25px
 
-.confirmations-header
-	color: rgba(255, 0, 0, 0.6)
+.table-section-header
+	color: rgba(74, 144, 226, 0.8)
 	text-align: center
 
-.confirmations-list
+.table-section-list
 	margin-bottom: 10px
 
-.confirmations-table
+.table-section-table
 	text-align: left
 
 	th, td
-		padding: 5px 10px
+		padding: 2px 10px
+
+.text-right
+	text-align: right
+
+.node-disclaimer
+	font-size: 12px
+	width: 50%
+	text-align: center
+	margin-bottom: 15px
 
 a
-	color: rgba(255, 0, 0, 0.6)
+	color: rgba(74, 144, 226, 0.8)
 	text-decoration: none
 
 	&:hover
-		color: rgba(255, 0, 0, 0.8)
+		color: rgba(74, 144, 226, 1)
 
 .credits
 	display: flex
@@ -80,14 +95,21 @@ a
 	.credits
 		font-size: 11px
 
-	.confirmations-table
+	.table-section-table
 		width: 100wv
 		table-layout: fixed
 		whitespace: nowrap
 		overflow: hidden
 
+	.table-section-table:not(.three-column)
 		td:first-child
 			max-width: 65vw
+			overflow: hidden
+			text-overflow: ellipsis
+
+	.table-section-table
+		td:first-child
+			max-width: 45vw
 			overflow: hidden
 			text-overflow: ellipsis
 

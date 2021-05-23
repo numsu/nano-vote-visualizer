@@ -1,7 +1,7 @@
 <div class="content">
 	<div class="header">
 		<h1>Live Nano election visualization</h1>
-		<span>Every line is a block waiting to be validated. When the quorum reaches 100%, the block is confirmed.</span><br><br>
+		<span>Every line is a block waiting to be validated. When the quorum reaches 100%, the block is confirmed. This data is based on the perspective of a single <a href="https://mynano.ninja/account/nalli-or-fast-dedicated-green" target="_blank">node</a>.</span><br><br>
 		<div class="setting">
 			<label for="fps">Refresh rate (FPS): {{ fps }}</label><input id="fps" type="range" min="0" max="60" step="1" [value]="fps" (input)="changeFps($event)">
 		</div>
@@ -10,7 +10,7 @@
 		</div>
 	</div>
 
-	<div id="visualization" #visualization></div>
+	<div id="electionChart"></div>
 
 	<div class="stats-container">
 		<div class="stat-container">
@@ -23,18 +23,48 @@
 		</div>
 	</div>
 
-	<div class="confirmations">
-		<h2 class="confirmations-header">Latest confirmations</h2>
-		<div class="confirmations-list">
-			<table class="confirmations-table" *ngIf="latestConfirmations.length">
+	<div class="table-section">
+		<h2 class="table-section-header">Principal vote participation</h2>
+		<span class="node-disclaimer">
+			Disclaimer: Node marked with *** is biased because it is the source of this information. This might cause the actual vote participation to be higher, even though it is a powerful server.
+			This represents the perspective of a single node and might not count all of the votes in the network.
+		</span>
+		<div class="table-section-list">
+			<table class="table-section-table three-column">
+				<th>Alias</th>
+				<th>Online weight %</th>
+				<th class="text-right">Vote count</th>
+				<th class="text-right">Participation %</th>
+				<tr *ngFor="let rep of representativeStats | keyvalue | orderBy: 'desc': 'value.voteCount'">
+					<td>
+						<a [href]="'https://mynano.ninja/account/' + rep.key" target="_blank">{{ rep.value.alias || rep.key }}</a>
+					</td>
+					<td class="text-right">
+						{{ rep.value.weight | percent: '1.0-2' }}
+					</td>
+					<td class="text-right">
+						{{ rep.value.voteCount }}
+					</td>
+					<td class="text-right">
+						{{ rep.value.voteCount / blocks | percent }}
+					</td>
+				</tr>
+			</table>
+		</div>
+	</div>
+
+	<div class="table-section">
+		<h2 class="table-section-header">Latest confirmations</h2>
+		<div class="table-section-list">
+			<table class="table-section-table" *ngIf="latestConfirmations.length">
 				<th>Account/Hash</th>
-				<th>Amount</th>
+				<th class="text-right">Amount</th>
 				<tr *ngFor="let confirmation of latestConfirmations">
 					<td>
 						<a [href]="'https://nanolooker.com/account/' + confirmation.account" target="_blank">{{ confirmation.account }}</a><br>
 						<a [href]="'https://nanolooker.com/block/' + confirmation.hash" target="_blank">{{ confirmation.hash }}</a>
 					</td>
-					<td>
+					<td class="text-right">
 						{{ confirmation.amount }}
 					</td>
 				</tr>
