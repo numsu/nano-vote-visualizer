@@ -1,7 +1,7 @@
 <div class="content">
 	<div class="header">
 		<h1>Live Nano election visualization</h1>
-		<span>Every line is a block waiting to be validated. When the quorum reaches 100%, the block is confirmed. This data is based on the perspective of a single <a href="https://mynano.ninja/account/nalli-or-fast-dedicated-green" target="_blank">node</a>.</span><br><br>
+		<span>Every line is a block waiting to be validated. When the quorum reaches 100%, the block is confirmed. This data is based on the perspective of a single <a [href]="'https://mynano.ninja/account/' + hostAccount" target="_blank">node</a>.</span><br><br>
 		<div class="setting">
 			<label for="fps">Refresh rate (FPS): {{ fps }}</label><input id="fps" type="range" min="0" [max]="maxFps" step="1" [value]="fps" (input)="changeFps($event)">
 		</div>

@@ -38,6 +38,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
 	readonly maxTimeframe = 10;
 	readonly maxFps = 60;
+	readonly hostAccount = 'nano_3zapp5z141qpjipsb1jnjdmk49jwqy58i6u6wnyrh6x7woajeyme85shxewt';
 
 	constructor(private ws: NanoWebsocketService,
 				private changeDetectorRef: ChangeDetectorRef) {
@@ -70,7 +71,7 @@ export class AppComponent implements OnInit, OnDestroy {
 	initPrincipals() {
 		this.ws.principals.forEach(principal => {
 			let alias = principal.alias;
-			if (principal.account == 'nano_3zapp5z141qpjipsb1jnjdmk49jwqy58i6u6wnyrh6x7woajeyme85shxewt') {
+			if (principal.account == this.hostAccount) {
 				alias = '*** ' + alias;
 			}
 
@@ -94,7 +95,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
 			const item = this.electionChartData.get(block);
 			if (item) {
-				if (item.quorum !== null) {
+				if (item.quorum != null) {
 					item.quorum = item.quorum + principalWeightOfQuorum;
 					if (item.quorum > 100) {
 						item.quorum = 100;
@@ -131,19 +132,13 @@ export class AppComponent implements OnInit, OnDestroy {
 		subjects.stoppedElections.subscribe(async stoppedElection => {
 			const block = stoppedElection.message.hash;
 			const item = this.electionChartData.get(block);
-			if (!item || item.quorum < 100) {
-				this.deleteFromData(block, item);
+			if (item && item.quorum != null && item.quorum != 100) {
+				item.quorum = null;
+				this.stoppedElections++;
+				this.electionChartRecentlyRemoved.add(block);
+				setTimeout(() => this.electionChartRecentlyRemoved.delete(block), 2000);
 			}
 		});
-	}
-
-	async deleteFromData(block: string, item: DataItem) {
-		if (item && item.quorum !== null) {
-			item.quorum = null;
-			this.stoppedElections++;
-			this.electionChartRecentlyRemoved.add(block);
-			setTimeout(() => this.electionChartRecentlyRemoved.delete(block), 2000);
-		}
 	}
 
 	async buildElectionChart() {
