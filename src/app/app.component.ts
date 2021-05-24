@@ -15,6 +15,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
 	pageUpdateInterval: any;
 	upkeepInterval: any;
+	wsHealthCheckInterval: any;
 
 	electionChart: uPlot;
 	electionChartData = new Map<string, DataItem>();
@@ -46,6 +47,9 @@ export class AppComponent implements OnInit, OnDestroy {
 		this.stopInterval();
 		if (this.upkeepInterval) {
 			clearInterval(this.upkeepInterval);
+		}
+		if (this.wsHealthCheckInterval) {
+			clearInterval(this.wsHealthCheckInterval);
 		}
 	}
 
@@ -80,6 +84,8 @@ export class AppComponent implements OnInit, OnDestroy {
 
 	async start() {
 		const subjects = await this.ws.subscribe();
+		this.wsHealthCheckInterval = setInterval(() => this.ws.checkAndReconnectSocket(), 5000);
+
 		subjects.votes.subscribe(async vote => {
 			const block = vote.message.blocks[0];
 			const principalWeight = this.ws.principalWeights.get(vote.message.account);
@@ -95,12 +101,10 @@ export class AppComponent implements OnInit, OnDestroy {
 					}
 				} else if (!this.electionChartRecentlyRemoved.has(block)) {
 					this.electionChartData.delete(block);
-					const newItem = { index: this.blocks++, quorum: principalWeightOfQuorum, added: new Date().getTime() };
-					this.electionChartData.set(block, newItem);
+					this.electionChartData.set(block, { index: this.blocks++, quorum: principalWeightOfQuorum, added: new Date().getTime() });
 				}
 			} else {
-				const newItem = { index: this.blocks++, quorum: principalWeightOfQuorum, added: new Date().getTime() };
-				this.electionChartData.set(block, newItem);
+				this.electionChartData.set(block, { index: this.blocks++, quorum: principalWeightOfQuorum, added: new Date().getTime() });
 			}
 
 			this.representativeStats.get(vote.message.account).voteCount++;
@@ -111,6 +115,8 @@ export class AppComponent implements OnInit, OnDestroy {
 			const item = this.electionChartData.get(block);
 			if (item) {
 				item.quorum = 100;
+			} else {
+				this.electionChartData.set(block, { index: this.blocks++, quorum: 100, added: new Date().getTime() });
 			}
 			this.confirmations++;
 
@@ -245,7 +251,6 @@ export class AppComponent implements OnInit, OnDestroy {
 		this.upkeepInterval = setInterval(async () => {
 			console.log('Upkeep triggered...');
 			await this.ws.updatePrincipalsAndQuorum();
-			console.log('Updated principal reps and quorum');
 
 			const toDeleteBlocks = [];
 			const now = new Date().getTime();
@@ -257,16 +262,14 @@ export class AppComponent implements OnInit, OnDestroy {
 			}
 
 			toDeleteBlocks.forEach(item => this.electionChartData.delete(item));
-			console.log('Deleted ' + toDeleteBlocks.length + ' old items from chart');
 
 			for (const principal of this.ws.principals) {
 				const stat = this.representativeStats.get(principal.account);
 				stat.alias = principal.alias;
 				stat.weight = this.ws.principalWeights.get(principal.account) / this.ws.onlineStake;
 			}
-			console.log('Updated rep weights');
 
-		}, 1000 * 60 * 1);
+		}, 1000 * 60 * this.maxTimeframe / 2);
 	}
 
 }

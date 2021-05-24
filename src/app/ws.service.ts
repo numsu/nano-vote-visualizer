@@ -1,7 +1,8 @@
 import BigNumber from 'bignumber.js'
 import { tools } from 'nanocurrency-web';
-import { Observable, Subject } from 'rxjs';
-import { webSocket } from 'rxjs/webSocket';
+import { Subject } from 'rxjs';
+import { delay, retryWhen, tap } from 'rxjs/operators';
+import { WebSocketSubject, webSocket } from 'rxjs/webSocket';
 
 import { HttpClient } from '@angular/common/http';
 import { Injectable } from "@angular/core";
@@ -21,13 +22,23 @@ export class NanoWebsocketService {
 	confirmationSubscription = new Subject<Confirmation>();
 	stopppedElectionsSubscription = new Subject<StoppedElection>();
 
+	socket: WebSocketSubject<any>;
+
 	constructor(private http: HttpClient) {
 	}
 
 	async subscribe(): Promise<Subscriptions> {
-		const socket = webSocket<any>(this.wsUrl);
+		this.socket = webSocket<any>(this.wsUrl);
+		this.socket.pipe(
+			retryWhen(errors =>
+				errors.pipe(tap(e =>
+					console.error('WS Error', e),
+					delay(5000),
+				))
+			)
+		);
 
-		socket.asObservable().subscribe(res => {
+		this.socket.asObservable().subscribe(res => {
 			switch (res.topic) {
 				case 'vote':
 					this.voteSubscription.next(res);
@@ -43,14 +54,14 @@ export class NanoWebsocketService {
 			}
 		});
 
-		socket.next({
+		this.socket.next({
 			'action': 'subscribe',
 			'topic': 'vote',
 			'options': {
 				'representatives': this.principals.map(p => p.account),
 			},
 		});
-		socket.next({
+		this.socket.next({
 			'action': 'subscribe',
 			'topic': 'confirmation',
 			'options': {
@@ -59,7 +70,7 @@ export class NanoWebsocketService {
 				'include_block': 'false',
 			},
 		});
-		socket.next({
+		this.socket.next({
 			'action': 'subscribe',
 			'topic': 'stopped_election',
 		});
@@ -71,16 +82,26 @@ export class NanoWebsocketService {
 		};
 	}
 
+	checkAndReconnectSocket() {
+		if (this.socket && this.socket.closed) {
+			this.subscribe();
+		}
+	}
+
 	async updatePrincipalsAndQuorum() {
-		this.principals = await this.http.get<Principal[]>('https://mynano.ninja/api/accounts/principals').toPromise();
-		this.principals.forEach(p => this.principalWeights.set(p.account, new BigNumber(p.votingweight).shiftedBy(-30).toNumber()));
+		try {
+			this.principals = await this.http.get<Principal[]>('https://mynano.ninja/api/accounts/principals').toPromise();
+			this.principals.forEach(p => this.principalWeights.set(p.account, new BigNumber(p.votingweight).shiftedBy(-30).toNumber()));
 
-		const quorumResponse = await this.http.post<ConfirmationQuorumResponse>(this.rpcUrl, {
-			'action': 'confirmation_quorum'
-		}).toPromise();
+			const quorumResponse = await this.http.post<ConfirmationQuorumResponse>(this.rpcUrl, {
+				'action': 'confirmation_quorum'
+			}).toPromise();
 
-		this.quorumPercent = new BigNumber(tools.convert(quorumResponse.online_weight_quorum_percent, 'RAW', 'NANO')).toNumber();
-		this.onlineStake = new BigNumber(tools.convert(quorumResponse.online_stake_total, 'RAW', 'NANO')).toNumber();
+			this.quorumPercent = new BigNumber(tools.convert(quorumResponse.online_weight_quorum_percent, 'RAW', 'NANO')).toNumber();
+			this.onlineStake = new BigNumber(tools.convert(quorumResponse.online_stake_total, 'RAW', 'NANO')).toNumber();
+		} catch (e) {
+			console.error('Error updaging principals and quorum', e);
+		}
 	}
 
 }
@@ -98,6 +119,7 @@ export interface Principal {
 	uptime: number;
 	votelatency: number;
 	votingweight: number;
+	cemented: string;
 }
 
 export interface Vote extends ResponseBase {
