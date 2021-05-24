@@ -1,7 +1,7 @@
 import { tools } from 'nanocurrency-web';
 import uPlot from 'uplot';
 
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
 
 import { ConfirmationMessage, NanoWebsocketService } from './ws.service';
 
@@ -14,6 +14,7 @@ import { ConfirmationMessage, NanoWebsocketService } from './ws.service';
 export class AppComponent implements OnInit, OnDestroy {
 
 	pageUpdateInterval: any;
+	upkeepInterval: any;
 
 	electionChart: uPlot;
 	electionChartData = new Map<string, DataItem>();
@@ -34,6 +35,8 @@ export class AppComponent implements OnInit, OnDestroy {
 
 	startTime = new Date();
 
+	readonly maxTimeframe = 10;
+	readonly maxFps = 60;
 
 	constructor(private ws: NanoWebsocketService,
 				private changeDetectorRef: ChangeDetectorRef) {
@@ -41,34 +44,69 @@ export class AppComponent implements OnInit, OnDestroy {
 
 	ngOnDestroy() {
 		this.stopInterval();
+		if (this.upkeepInterval) {
+			clearInterval(this.upkeepInterval);
+		}
 	}
 
 	async ngOnInit() {
+		this.startUpkeepInterval();
 		this.initSettings();
-		this.build();
-		(await this.ws.subscribeToVotes()).subscribe(async vote => {
+		this.buildElectionChart();
+		await this.ws.updatePrincipalsAndQuorum();
+		this.initPrincipals();
+		this.start();
+	}
+
+	initSettings() {
+		this.fps = Math.min(+localStorage.getItem('nv-fps') || 8, this.maxFps);
+		this.timeframe = Math.min(+localStorage.getItem('nv-timeframe') || 1, this.maxTimeframe);
+	}
+
+	initPrincipals() {
+		this.ws.principals.forEach(principal => {
+			let alias = principal.alias;
+			if (principal.account == 'nano_3zapp5z141qpjipsb1jnjdmk49jwqy58i6u6wnyrh6x7woajeyme85shxewt') {
+				alias = '*** ' + alias;
+			}
+
+			this.representativeStats.set(principal.account, {
+				weight: this.ws.principalWeights.get(principal.account) / this.ws.onlineStake,
+				alias,
+				voteCount: 0,
+			});
+		});
+	}
+
+	async start() {
+		const subjects = await this.ws.subscribe();
+		subjects.votes.subscribe(async vote => {
 			const block = vote.message.blocks[0];
 			const principalWeight = this.ws.principalWeights.get(vote.message.account);
-			const principalWeightPercent = principalWeight / this.ws.quorumDelta * 100;
+			const principalWeightPercent = principalWeight / this.ws.onlineStake * 100;
+			const principalWeightOfQuorum = principalWeightPercent / this.ws.quorumPercent * 100;
 
 			const item = this.electionChartData.get(block);
 			if (item) {
 				if (item.quorum !== null) {
-					item.quorum = item.quorum + principalWeightPercent;
+					item.quorum = item.quorum + principalWeightOfQuorum;
 					if (item.quorum > 100) {
 						item.quorum = 100;
 					}
 				} else if (!this.electionChartRecentlyRemoved.has(block)) {
 					this.electionChartData.delete(block);
-					this.electionChartData.set(block, { index: this.blocks++, quorum: principalWeightPercent, added: new Date().getTime() });
+					const newItem = { index: this.blocks++, quorum: principalWeightOfQuorum, added: new Date().getTime() };
+					this.electionChartData.set(block, newItem);
 				}
 			} else {
-				this.electionChartData.set(block, { index: this.blocks++, quorum: principalWeightPercent, added: new Date().getTime() });
+				const newItem = { index: this.blocks++, quorum: principalWeightOfQuorum, added: new Date().getTime() };
+				this.electionChartData.set(block, newItem);
 			}
 
 			this.representativeStats.get(vote.message.account).voteCount++;
 		});
-		(await this.ws.subscribeToConfirmations()).subscribe(async confirmation => {
+
+		subjects.confirmations.subscribe(async confirmation => {
 			const block = confirmation.message.hash;
 			const item = this.electionChartData.get(block);
 			if (item) {
@@ -83,31 +121,14 @@ export class AppComponent implements OnInit, OnDestroy {
 				this.latestConfirmations.pop();
 			}
 		});
-		(await this.ws.subscribeToStoppedElections()).subscribe(async stoppedElection => {
+
+		subjects.stoppedElections.subscribe(async stoppedElection => {
 			const block = stoppedElection.message.hash;
 			const item = this.electionChartData.get(block);
 			if (!item || item.quorum < 100) {
 				this.deleteFromData(block, item);
 			}
 		});
-
-		this.ws.principals.forEach(principal => {
-			let alias = principal.alias;
-			if (principal.account == 'nano_3zapp5z141qpjipsb1jnjdmk49jwqy58i6u6wnyrh6x7woajeyme85shxewt') {
-				alias = '*** ' + alias;
-			}
-
-			this.representativeStats.set(principal.account, {
-				weight: this.ws.principalWeights.get(principal.account) / this.ws.quorumDelta,
-				alias,
-				voteCount: 0,
-			})
-		});
-	}
-
-	initSettings() {
-		this.fps = +localStorage.getItem('nv-fps') || 8;
-		this.timeframe = +localStorage.getItem('nv-timeframe') || 1;
 	}
 
 	async deleteFromData(block: string, item: DataItem) {
@@ -119,7 +140,7 @@ export class AppComponent implements OnInit, OnDestroy {
 		}
 	}
 
-	async build() {
+	async buildElectionChart() {
 		const bars = uPlot.paths.bars({ align: 1, size: [1, 20] });
 		const opts: uPlot.Options = {
 			title: '',
@@ -218,6 +239,34 @@ export class AppComponent implements OnInit, OnDestroy {
 			clearInterval(this.pageUpdateInterval);
 			this.pageUpdateInterval = undefined;
 		}
+	}
+
+	startUpkeepInterval() {
+		this.upkeepInterval = setInterval(async () => {
+			console.log('Upkeep triggered...');
+			await this.ws.updatePrincipalsAndQuorum();
+			console.log('Updated principal reps and quorum');
+
+			const toDeleteBlocks = [];
+			const now = new Date().getTime();
+			const tooOld = now - (1000 * 60 * this.maxTimeframe);
+			for (const [ key, value ] of this.electionChartData.entries()) {
+				if (tooOld > value.added) {
+					toDeleteBlocks.push(key);
+				}
+			}
+
+			toDeleteBlocks.forEach(item => this.electionChartData.delete(item));
+			console.log('Deleted ' + toDeleteBlocks.length + ' old items from chart');
+
+			for (const principal of this.ws.principals) {
+				const stat = this.representativeStats.get(principal.account);
+				stat.alias = principal.alias;
+				stat.weight = this.ws.principalWeights.get(principal.account) / this.ws.onlineStake;
+			}
+			console.log('Updated rep weights');
+
+		}, 1000 * 60 * 1);
 	}
 
 }

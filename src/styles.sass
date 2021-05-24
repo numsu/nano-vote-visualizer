@@ -92,29 +92,31 @@ a
 	padding-bottom: 50px
 
 @media (max-width: 768px)
+	.hide-mobile
+		display: none
+
 	.credits
 		font-size: 11px
 
 	.table-section-table
-		width: 100wv
+		width: 100vw
 		table-layout: fixed
 		whitespace: nowrap
 		overflow: hidden
 
-	.table-section-table:not(.three-column)
-		td:first-child
-			max-width: 65vw
-			overflow: hidden
-			text-overflow: ellipsis
-
 	.table-section-table
+		width: 100%
+
 		td:first-child
-			max-width: 45vw
 			overflow: hidden
 			text-overflow: ellipsis
+			white-space: nowrap
 
 	.stat-header
 		font-size: 16px
 
 	.stat
 		font-size: 18px
+
+	.node-disclaimer
+		width: 90%
