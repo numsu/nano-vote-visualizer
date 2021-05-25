@@ -16,8 +16,24 @@ body
 	flex: 1
 	flex-direction: column
 
+.settings-trigger
+	background-color: #202124
+	height: 20px
+	width: 80%
+	margin: 0 auto
+
+	&:hover
+		background-color: #424549
+		cursor: pointer
+
+.settings-container
+	display: flex
+	flex-direction: row
+	justify-content: space-around
+
 .setting
 	margin-bottom: 5px
+	text-align: right
 
 	input
 		height: 10px
@@ -46,8 +62,8 @@ body
 	color: #ccc
 	font-size: 1.3em
 
-.u-series:first-child
-	display: none
+.u-legend
+	display: none !important
 
 .table-section
 	display: flex

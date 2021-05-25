@@ -2,11 +2,27 @@
 	<div class="header">
 		<h1>Live Nano election visualization</h1>
 		<span>Every line is a block waiting to be validated. When the quorum reaches 100%, the block is confirmed. This data is based on the perspective of a single <a [href]="'https://mynano.ninja/account/' + hostAccount" target="_blank">node</a>.</span><br><br>
-		<div class="setting">
-			<label for="fps">Refresh rate (FPS): {{ fps }}</label><input id="fps" type="range" min="0" [max]="maxFps" step="1" [value]="fps" (input)="changeFps($event)">
-		</div>
-		<div class="setting">
-			<label for="timeframe">Graph timeframe (Minutes): {{ timeframe }}</label><input id="timeframe" type="range" min=1 [max]="maxTimeframe" step="1"[value]="timeframe" (input)="changeTimeframe($event)">
+		<div class="settings-trigger" (click)="showSettings = !showSettings"></div>
+		<div class="settings-container" *ngIf="showSettings">
+			<div class="setting-container">
+				<h2>Graph style</h2>
+				<div class="setting">
+					<label for="graphLines">Lines</label>
+					<input type="radio" id="graphLines" name="graphStyle" [checked]="graphStyle == 1" (input)="changeGraphStyle(1)">
+					<br>
+					<label for="graphHeatmap">Heatmap</label>
+					<input type="radio" id="graphHeatmap" name="graphStyle" [checked]="graphStyle == 2" (input)="changeGraphStyle(2)">
+				</div>
+			</div>
+			<div class="setting-container">
+				<h2>Tuning</h2>
+				<div class="setting">
+					<label for="fps">Refresh rate (FPS): {{ fps }}</label><input id="fps" type="range" min="0" [max]="maxFps" step="1" [value]="fps" (input)="changeFps($event)">
+				</div>
+				<div class="setting">
+					<label for="timeframe">Graph timeframe (Minutes): {{ timeframe }}</label><input id="timeframe" type="range" min=1 [max]="maxTimeframe" step="1" [value]="timeframe" (input)="changeTimeframe($event)">
+				</div>
+			</div>
 		</div>
 	</div>
 

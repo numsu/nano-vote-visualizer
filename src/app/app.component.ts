@@ -27,6 +27,7 @@ export class AppComponent implements OnInit, OnDestroy {
 	// User defined settings
 	fps: number;
 	timeframe: number;
+	graphStyle: GraphStyle = 2;
 
 	// Counters
 	blocks = 0;
@@ -35,13 +36,14 @@ export class AppComponent implements OnInit, OnDestroy {
 	cps = '0';
 
 	startTime = new Date();
+	showSettings = false;
 
 	readonly maxTimeframe = 10;
 	readonly maxFps = 60;
 	readonly hostAccount = 'nano_3zapp5z141qpjipsb1jnjdmk49jwqy58i6u6wnyrh6x7woajeyme85shxewt';
 
 	constructor(private ws: NanoWebsocketService,
-				private changeDetectorRef: ChangeDetectorRef) {
+		private changeDetectorRef: ChangeDetectorRef) {
 	}
 
 	ngOnDestroy() {
@@ -58,6 +60,7 @@ export class AppComponent implements OnInit, OnDestroy {
 		this.startUpkeepInterval();
 		this.initSettings();
 		this.buildElectionChart();
+		this.startInterval();
 		await this.ws.updatePrincipalsAndQuorum();
 		this.initPrincipals();
 		this.start();
@@ -66,6 +69,7 @@ export class AppComponent implements OnInit, OnDestroy {
 	initSettings() {
 		this.fps = Math.min(+localStorage.getItem('nv-fps') || 8, this.maxFps);
 		this.timeframe = Math.min(+localStorage.getItem('nv-timeframe') || 1, this.maxTimeframe);
+		this.graphStyle = +localStorage.getItem('nv-style') || GraphStyle.HEATMAP;
 	}
 
 	initPrincipals() {
@@ -142,7 +146,20 @@ export class AppComponent implements OnInit, OnDestroy {
 	}
 
 	async buildElectionChart() {
-		const bars = uPlot.paths.bars({ align: 1, size: [1, 20] });
+		const chartElement = document.getElementById('electionChart');
+		chartElement.innerHTML = '';
+
+		const paths = this.graphStyle == GraphStyle.LINES
+				? uPlot.paths.bars({ align: 1, size: [1, 20] })
+				: () => null;
+		const xRange: uPlot.Scale.Range = this.graphStyle == GraphStyle.LINES
+				? (u, dataMin, dataMax) => {
+					return [dataMin, dataMax];
+				}
+				: (u, dataMin, dataMax) => {
+					return [0, dataMax];
+				};
+
 		const opts: uPlot.Options = {
 			title: '',
 			id: '1',
@@ -150,14 +167,18 @@ export class AppComponent implements OnInit, OnDestroy {
 			width: window.innerWidth - 17,
 			height: 600,
 			padding: [20, 10, 0, -10],
-			pxAlign: false,
+			pxAlign: 0,
 			cursor: {
 				show: false,
 			},
 			scales: {
 				'x': {
 					time: false,
+					range: xRange,
 				},
+				'y': {
+					range: (u, dataMin, dataMax) => [0, 100],
+				}
 			},
 			axes: [
 				{
@@ -178,8 +199,8 @@ export class AppComponent implements OnInit, OnDestroy {
 				{},
 				{
 					label: 'Quorum %',
-					paths: bars,
-					pxAlign: false,
+					paths,
+					pxAlign: 0,
 					spanGaps: false,
 					points: {
 						show: false,
@@ -189,10 +210,36 @@ export class AppComponent implements OnInit, OnDestroy {
 					max: 100,
 				},
 			],
+			hooks: {
+				draw: [(u: uPlot) => {
+					if (this.graphStyle == GraphStyle.HEATMAP) {
+						const { ctx, data } = u;
+
+						let yData = data[1];
+
+						ctx.beginPath();
+						ctx.rect(u.bbox.left, u.bbox.top, u.bbox.width, u.bbox.height);
+						ctx.clip();
+
+						yData.forEach((yVal, xi) => {
+							let xPos = Math.round(u.valToPos(data[0][xi], 'x', true));
+							let yPos = Math.round(u.valToPos(yVal, 'y', true));
+							const green = 255 * (yVal / 100);
+							const red = 150 - yVal || 0;
+							ctx.fillStyle = `rgba(${red}, ${green}, 0, 0.5)`;
+							ctx.fillRect(
+								xPos,
+								yPos,
+								5,
+								5,
+							);
+						});
+					}
+				}]
+			}
 		};
 
-		this.electionChart = new uPlot(opts, [[], []], document.getElementById('electionChart'));
-		this.startInterval();
+		this.electionChart = new uPlot(opts, [[], []], chartElement);
 	}
 
 	changeFps(e: any) {
@@ -204,6 +251,12 @@ export class AppComponent implements OnInit, OnDestroy {
 	changeTimeframe(e: any) {
 		this.timeframe = e.target.value;
 		localStorage.setItem('nv-timeframe', String(this.timeframe));
+	}
+
+	changeGraphStyle(style: GraphStyle) {
+		this.graphStyle = style;
+		localStorage.setItem('nv-style', String(this.graphStyle));
+		this.buildElectionChart();
 	}
 
 	async startInterval() {
@@ -250,7 +303,7 @@ export class AppComponent implements OnInit, OnDestroy {
 			const toDeleteBlocks = [];
 			const now = new Date().getTime();
 			const tooOld = now - (1000 * 60 * this.maxTimeframe);
-			for (const [ key, value ] of this.electionChartData.entries()) {
+			for (const [key, value] of this.electionChartData.entries()) {
 				if (tooOld > value.added) {
 					toDeleteBlocks.push(key);
 				}
@@ -260,8 +313,10 @@ export class AppComponent implements OnInit, OnDestroy {
 
 			for (const principal of this.ws.principals) {
 				const stat = this.representativeStats.get(principal.account);
-				stat.alias = principal.alias;
-				stat.weight = this.ws.principalWeights.get(principal.account) / this.ws.onlineStake;
+				if (stat) {
+					stat.alias = principal.alias;
+					stat.weight = this.ws.principalWeights.get(principal.account) / this.ws.onlineStake;
+				}
 			}
 
 		}, 1000 * 60 * this.maxTimeframe / 2);
@@ -279,4 +334,10 @@ export interface RepsetentativeStatItem {
 	weight: number;
 	alias: string;
 	voteCount: number;
+}
+
+export enum GraphStyle {
+	X0,
+	LINES,
+	HEATMAP,
 }
