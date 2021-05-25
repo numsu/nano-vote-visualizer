@@ -34,6 +34,7 @@ export class AppComponent implements OnInit, OnDestroy {
 	stoppedElections = 0;
 	confirmations = 0;
 	cps = '0';
+	smooth = true;
 
 	startTime = new Date();
 	showSettings = false;
@@ -70,6 +71,7 @@ export class AppComponent implements OnInit, OnDestroy {
 		this.fps = Math.min(+localStorage.getItem('nv-fps') || 8, this.maxFps);
 		this.timeframe = Math.min(+localStorage.getItem('nv-timeframe') || 1, this.maxTimeframe);
 		this.graphStyle = +localStorage.getItem('nv-style') || GraphStyle.HEATMAP;
+		this.smooth = (localStorage.getItem('nv-smooth') || 'true') == 'true';
 	}
 
 	initPrincipals() {
@@ -100,16 +102,36 @@ export class AppComponent implements OnInit, OnDestroy {
 			const item = this.electionChartData.get(block);
 			if (item) {
 				if (item.quorum != null) {
-					item.quorum = item.quorum + principalWeightOfQuorum;
-					if (item.quorum > 100) {
-						item.quorum = 100;
+
+					const previousQuorum = item.quorum;
+					const newQuorum = previousQuorum + principalWeightOfQuorum;
+					if (this.smooth) {
+						item.animatingQuorum += principalWeightOfQuorum;
+					} else {
+						item.quorum += principalWeightOfQuorum;
+					}
+
+					if (newQuorum > 100) {
+						if (this.smooth) {
+							item.animatingQuorum = 100 - previousQuorum;
+						} else {
+							item.quorum = 100;
+						}
 					}
 				} else if (!this.electionChartRecentlyRemoved.has(block)) {
 					this.electionChartData.delete(block);
-					this.electionChartData.set(block, { index: this.blocks++, quorum: principalWeightOfQuorum, added: new Date().getTime() });
+					if (this.smooth) {
+						this.electionChartData.set(block, { index: this.blocks++, quorum: 0, animatingQuorum: principalWeightOfQuorum, added: new Date().getTime() });
+					} else {
+						this.electionChartData.set(block, { index: this.blocks++, quorum: principalWeightOfQuorum, animatingQuorum: 0, added: new Date().getTime() });
+					}
 				}
 			} else {
-				this.electionChartData.set(block, { index: this.blocks++, quorum: principalWeightOfQuorum, added: new Date().getTime() });
+				if (this.smooth) {
+					this.electionChartData.set(block, { index: this.blocks++, quorum: 0, animatingQuorum: principalWeightOfQuorum, added: new Date().getTime() });
+				} else {
+					this.electionChartData.set(block, { index: this.blocks++, quorum: principalWeightOfQuorum, animatingQuorum: 0, added: new Date().getTime() });
+				}
 			}
 
 			this.representativeStats.get(vote.message.account).voteCount++;
@@ -119,9 +141,17 @@ export class AppComponent implements OnInit, OnDestroy {
 			const block = confirmation.message.hash;
 			const item = this.electionChartData.get(block);
 			if (item) {
-				item.quorum = 100;
+				if (this.smooth) {
+					item.animatingQuorum = 100 - item.quorum;
+				} else {
+					item.quorum = 100;
+				}
 			} else {
-				this.electionChartData.set(block, { index: this.blocks++, quorum: 100, added: new Date().getTime() });
+				if (this.smooth) {
+					this.electionChartData.set(block, { index: this.blocks++, quorum: 0, animatingQuorum: 100, added: new Date().getTime() });
+				} else {
+					this.electionChartData.set(block, { index: this.blocks++, quorum: 100, animatingQuorum: 0, added: new Date().getTime() });
+				}
 			}
 			this.confirmations++;
 
@@ -254,6 +284,19 @@ export class AppComponent implements OnInit, OnDestroy {
 		this.buildElectionChart();
 	}
 
+	changeSmooth() {
+		this.smooth = !this.smooth;
+		localStorage.setItem('nv-smooth', this.smooth ? 'true' : 'false');
+		if (!this.smooth) {
+			for (const data of this.electionChartData.values()) {
+				if (data.animatingQuorum > 0) {
+					data.quorum = Math.min(data.animatingQuorum, 100);
+					data.animatingQuorum = 0;
+				}
+			}
+		}
+	}
+
 	async startInterval() {
 		this.stopInterval();
 
@@ -269,8 +312,23 @@ export class AppComponent implements OnInit, OnDestroy {
 				const tooOld = now - (1000 * 60 * this.timeframe);
 				Array.from(this.electionChartData.values()).forEach(i => {
 					if (tooOld < i.added) {
+						if (this.smooth) {
+							if (i.animatingQuorum > 0 && i.quorum < 100) {
+								if (i.animatingQuorum > 1) {
+									i.animatingQuorum--;
+									i.quorum++;
+								} else {
+									i.quorum += i.animatingQuorum;
+									i.animatingQuorum = 0;
+								}
+							}
+						}
+
 						x.push(i.index);
 						y.push(i.quorum);
+					} else if (this.smooth) {
+						i.quorum += i.animatingQuorum;
+						i.animatingQuorum = 0;
 					}
 				});
 				this.electionChart.setData([x, y]);
@@ -322,6 +380,7 @@ export class AppComponent implements OnInit, OnDestroy {
 export interface DataItem {
 	index: number;
 	quorum: number;
+	animatingQuorum: number;
 	added: number;
 }
 

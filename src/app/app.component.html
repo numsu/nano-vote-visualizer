@@ -17,6 +17,9 @@
 			<div class="setting-container">
 				<h2>Tuning</h2>
 				<div class="setting">
+					<label for="smooth">Smooth</label><input id="Smooth" type="checkbox" [checked]="smooth" (change)="changeSmooth()">
+				</div>
+				<div class="setting">
 					<label for="fps">Refresh rate (FPS): {{ fps }}</label><input id="fps" type="range" min="0" [max]="maxFps" step="1" [value]="fps" (input)="changeFps($event)">
 				</div>
 				<div class="setting">
