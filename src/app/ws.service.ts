@@ -97,7 +97,7 @@ export class NanoWebsocketService {
 				'action': 'confirmation_quorum'
 			}).toPromise();
 
-			this.quorumPercent = new BigNumber(tools.convert(quorumResponse.online_weight_quorum_percent, 'RAW', 'NANO')).toNumber();
+			this.quorumPercent = Number(quorumResponse.online_weight_quorum_percent);
 			this.onlineStake = new BigNumber(tools.convert(quorumResponse.online_stake_total, 'RAW', 'NANO')).toNumber();
 		} catch (e) {
 			console.error('Error updaging principals and quorum', e);

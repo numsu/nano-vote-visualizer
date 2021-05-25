@@ -132,7 +132,7 @@ export class AppComponent implements OnInit, OnDestroy {
 		subjects.stoppedElections.subscribe(async stoppedElection => {
 			const block = stoppedElection.message.hash;
 			const item = this.electionChartData.get(block);
-			if (item && item.quorum != null && item.quorum != 100) {
+			if (item && item.quorum != null && item.quorum < 100) {
 				item.quorum = null;
 				this.stoppedElections++;
 				this.electionChartRecentlyRemoved.add(block);
