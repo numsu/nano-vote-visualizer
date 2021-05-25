@@ -152,13 +152,6 @@ export class AppComponent implements OnInit, OnDestroy {
 		const paths = this.graphStyle == GraphStyle.LINES
 				? uPlot.paths.bars({ align: 1, size: [1, 20] })
 				: () => null;
-		const xRange: uPlot.Scale.Range = this.graphStyle == GraphStyle.LINES
-				? (u, dataMin, dataMax) => {
-					return [dataMin, dataMax];
-				}
-				: (u, dataMin, dataMax) => {
-					return [0, dataMax];
-				};
 
 		const opts: uPlot.Options = {
 			title: '',
@@ -174,7 +167,9 @@ export class AppComponent implements OnInit, OnDestroy {
 			scales: {
 				'x': {
 					time: false,
-					range: xRange,
+					range: (u, dataMin, dataMax) => {
+						return [dataMin, dataMax];
+					},
 				},
 				'y': {
 					range: (u, dataMin, dataMax) => [0, 100],
