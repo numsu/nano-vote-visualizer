@@ -313,15 +313,7 @@ export class AppComponent implements OnInit, OnDestroy {
 				Array.from(this.electionChartData.values()).forEach(i => {
 					if (tooOld < i.added) {
 						if (this.smooth) {
-							if (i.animatingQuorum > 0 && i.quorum < 100) {
-								if (i.animatingQuorum > 1) {
-									i.animatingQuorum--;
-									i.quorum++;
-								} else {
-									i.quorum += i.animatingQuorum;
-									i.animatingQuorum = 0;
-								}
-							}
+							this.animate(i);
 						}
 
 						x.push(i.index);
@@ -339,6 +331,22 @@ export class AppComponent implements OnInit, OnDestroy {
 				this.changeDetectorRef.markForCheck();
 			}
 		}, 1000 / this.fps);
+	}
+
+	async animate(i: DataItem) {
+		if (i.animatingQuorum > 0 && i.quorum < 100) {
+			if (i.animatingQuorum > 1) {
+				i.animatingQuorum--;
+				i.quorum++;
+			} else {
+				i.quorum += i.animatingQuorum;
+				i.animatingQuorum = 0;
+			}
+			if (i.quorum > 100) {
+				i.quorum = 100;
+				i.animatingQuorum = 0;
+			}
+		}
 	}
 
 	stopInterval() {
