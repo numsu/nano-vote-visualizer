@@ -4,7 +4,8 @@
 	"scripts": {
 		"ng": "ng",
 		"start": "ng serve",
-		"build": "ng build",
+		"build:live": "ng build --configuration live",
+		"build:beta": "ng build --configuration beta",
 		"watch": "ng build --watch --configuration development",
 		"test": "ng test"
 	},
@@ -18,6 +19,9 @@
 		"@angular/platform-browser": "12.0.0",
 		"@angular/platform-browser-dynamic": "12.0.0",
 		"@angular/router": "12.0.0",
+		"@fortawesome/angular-fontawesome": "0.9.0",
+		"@fortawesome/fontawesome-svg-core": "1.2.35",
+		"@fortawesome/free-solid-svg-icons": "5.15.3",
 		"angularx-qrcode": "11.0.0",
 		"bignumber.js": "9.0.1",
 		"lodash": "4.17.21",

@@ -1,8 +1,9 @@
 <div class="content">
 	<div class="header">
-		<h1>Live Nano election visualization</h1>
-		<span>Every line is a block waiting to be validated. When the quorum reaches 100%, the block is confirmed. This data is based on the perspective of a single <a [href]="'https://mynano.ninja/account/' + hostAccount" target="_blank">node</a>.</span><br><br>
-		<div class="settings-trigger" (click)="showSettings = !showSettings"></div>
+		<h1>{{ network == 'live' ? 'Live' : 'Beta' }} Nano election visualization</h1>
+		<span>Every item in the visualization is a block waiting to be validated. When the quorum reaches 100%, the block is confirmed. This data is based on the perspective of a single <a [href]="'https://mynano.ninja/account/' + hostAccount" target="_blank">node</a>.</span><br>
+		<span>You can change settings below to display more data. Larger time frame will degrade performance.</span><br><br>
+		<div class="settings-trigger" (click)="showSettings = !showSettings"><fa-icon [icon]="showSettings ? upArrow : downArrow"></fa-icon></div>
 		<div class="settings-container" *ngIf="showSettings">
 			<div class="setting-container">
 				<h2>Graph style</h2>
@@ -17,10 +18,11 @@
 			<div class="setting-container">
 				<h2>Tuning</h2>
 				<div class="setting">
-					<label for="smooth">Smooth</label><input id="Smooth" type="checkbox" [checked]="smooth" (change)="changeSmooth()">
+					<label for="smooth">Smooth</label><input id="Smooth" type="checkbox" [checked]="smooth" (change)="changeSmooth()"><br>
+					<label for="maxFps">Max FPS</label><input id="maxFps" type="checkbox" [checked]="useMaxFPS" (change)="changeUseMaxFps()">
 				</div>
 				<div class="setting">
-					<label for="fps">Refresh rate (FPS): {{ fps }}</label><input id="fps" type="range" min="0" [max]="maxFps" step="1" [value]="fps" (input)="changeFps($event)">
+					<label for="fps">Refresh rate (FPS): {{ fps }}</label><input id="fps" type="range" min="0" [max]="maxFps" step="1" [value]="fps" (input)="changeFps($event)" [disabled]="useMaxFPS">
 				</div>
 				<div class="setting">
 					<label for="timeframe">Graph timeframe (Minutes): {{ timeframe }}</label><input id="timeframe" type="range" min=1 [max]="maxTimeframe" step="1" [value]="timeframe" (input)="changeTimeframe($event)">
@@ -56,7 +58,7 @@
 				<th class="text-right">Participation %</th>
 				<tr *ngFor="let rep of representativeStats | keyvalue | orderBy: 'desc': 'value.voteCount'">
 					<td>
-						<a [href]="'https://mynano.ninja/account/' + rep.key" target="_blank">{{ rep.value.alias || rep.key }}</a>
+						<a [href]="repInfoUrl + '/account/' + rep.key" target="_blank">{{ rep.value.alias || rep.key }}</a>
 					</td>
 					<td class="text-right">
 						{{ rep.value.weight | percent: '1.2-2' }}
@@ -80,8 +82,8 @@
 				<th class="text-right">Amount</th>
 				<tr *ngFor="let confirmation of latestConfirmations">
 					<td>
-						<a [href]="'https://nanolooker.com/account/' + confirmation.account" target="_blank">{{ confirmation.account }}</a><br>
-						<a [href]="'https://nanolooker.com/block/' + confirmation.hash" target="_blank">{{ confirmation.hash }}</a>
+						<a [href]="explorerUrl + '/account/' + confirmation.account" target="_blank">{{ confirmation.account }}</a><br>
+						<a [href]="explorerUrl + '/block/' + confirmation.hash" target="_blank">{{ confirmation.hash }}</a>
 					</td>
 					<td class="text-right">
 						{{ confirmation.amount }}

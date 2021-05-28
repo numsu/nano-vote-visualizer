@@ -1,8 +1,11 @@
 import { tools } from 'nanocurrency-web';
+import { environment } from 'src/environments/environment';
 import uPlot from 'uplot';
 
 import { ChangeDetectionStrategy, ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
+import { faChevronDown, faChevronUp } from '@fortawesome/free-solid-svg-icons';
 
+import { Util } from './util';
 import { ConfirmationMessage, NanoWebsocketService } from './ws.service';
 
 @Component({
@@ -13,13 +16,20 @@ import { ConfirmationMessage, NanoWebsocketService } from './ws.service';
 })
 export class AppComponent implements OnInit, OnDestroy {
 
+	downArrow = faChevronDown;
+	upArrow = faChevronUp;
+
 	pageUpdateInterval: any;
 	upkeepInterval: any;
 	wsHealthCheckInterval: any;
+	animationInterval: any;
 
 	electionChart: uPlot;
-	electionChartData = new Map<string, DataItem>();
 	electionChartRecentlyRemoved = new Set<string>();
+
+	blockToIndex = new Map<string, number>();
+	indexToAnimating = new Map<number, number>();
+	new = [[], [], []];	// Index, Added, quorum
 
 	latestConfirmations: ConfirmationMessage[] = [];
 	representativeStats = new Map<string, RepsetentativeStatItem>();
@@ -35,16 +45,21 @@ export class AppComponent implements OnInit, OnDestroy {
 	confirmations = 0;
 	cps = '0';
 	smooth = true;
+	useMaxFPS = true;
 
-	startTime = new Date();
+	startTime = this.getTimeInSeconds();
 	showSettings = false;
+	minIndex = 0;
 
+	readonly network = environment.network;
 	readonly maxTimeframe = 10;
 	readonly maxFps = 60;
-	readonly hostAccount = 'nano_3zapp5z141qpjipsb1jnjdmk49jwqy58i6u6wnyrh6x7woajeyme85shxewt';
+	readonly hostAccount = environment.hostAccount;
+	readonly explorerUrl = environment.explorerUrl;
+	readonly repInfoUrl = environment.repInfoUrl;
 
 	constructor(private ws: NanoWebsocketService,
-		private changeDetectorRef: ChangeDetectorRef) {
+				private changeDetectorRef: ChangeDetectorRef) {
 	}
 
 	ngOnDestroy() {
@@ -55,10 +70,14 @@ export class AppComponent implements OnInit, OnDestroy {
 		if (this.wsHealthCheckInterval) {
 			clearInterval(this.wsHealthCheckInterval);
 		}
+		if (this.animationInterval) {
+			clearInterval(this.animationInterval);
+		}
 	}
 
 	async ngOnInit() {
 		this.startUpkeepInterval();
+		this.startAnimationInterval();
 		this.initSettings();
 		this.buildElectionChart();
 		this.startInterval();
@@ -72,6 +91,7 @@ export class AppComponent implements OnInit, OnDestroy {
 		this.timeframe = Math.min(+localStorage.getItem('nv-timeframe') || 1, this.maxTimeframe);
 		this.graphStyle = +localStorage.getItem('nv-style') || GraphStyle.HEATMAP;
 		this.smooth = (localStorage.getItem('nv-smooth') || 'true') == 'true';
+		this.useMaxFPS = (localStorage.getItem('nv-max-fps') || 'true') == 'true';
 	}
 
 	initPrincipals() {
@@ -89,49 +109,56 @@ export class AppComponent implements OnInit, OnDestroy {
 		});
 	}
 
+	getTimeInSeconds(date?: Date): number {
+		if (!date) {
+			date = new Date();
+		}
+		return date.getTime() / 1000;
+	}
+
 	async start() {
 		const subjects = await this.ws.subscribe();
-		this.wsHealthCheckInterval = setInterval(() => this.ws.checkAndReconnectSocket(), 5000);
+		this.wsHealthCheckInterval = setInterval(() => this.ws.checkAndReconnectSocket(), 2000);
 
 		subjects.votes.subscribe(async vote => {
 			const block = vote.message.blocks[0];
+			const index = this.blockToIndex.get(block);
 			const principalWeight = this.ws.principalWeights.get(vote.message.account);
 			const principalWeightPercent = principalWeight / this.ws.onlineStake * 100;
 			const principalWeightOfQuorum = principalWeightPercent / this.ws.quorumPercent * 100;
 
-			const item = this.electionChartData.get(block);
-			if (item) {
-				if (item.quorum != null) {
-
-					const previousQuorum = item.quorum;
+			if (index) {
+				if (this.new[DataIndex.QUORUM][index] != 0) {
+					const previousQuorum = this.new[DataIndex.QUORUM][index];
 					const newQuorum = previousQuorum + principalWeightOfQuorum;
-					if (this.smooth) {
-						item.animatingQuorum += principalWeightOfQuorum;
-					} else {
-						item.quorum += principalWeightOfQuorum;
-					}
 
 					if (newQuorum > 100) {
 						if (this.smooth) {
-							item.animatingQuorum = 100 - previousQuorum;
+							this.indexToAnimating.set(index, 100 - previousQuorum);
 						} else {
-							item.quorum = 100;
+							this.new[DataIndex.QUORUM][index] = 100;
+							this.indexToAnimating.delete(index);
+						}
+					} else {
+						if (this.smooth) {
+							const previous = this.indexToAnimating.get(index);
+							let newAnimating;
+							if (previous) {
+								newAnimating = previous + principalWeightOfQuorum;
+							} else {
+								newAnimating = principalWeightOfQuorum;
+							}
+
+							this.indexToAnimating.set(index, newAnimating);
+						} else {
+							this.new[DataIndex.QUORUM][index] += principalWeightOfQuorum;
 						}
 					}
 				} else if (!this.electionChartRecentlyRemoved.has(block)) {
-					this.electionChartData.delete(block);
-					if (this.smooth) {
-						this.electionChartData.set(block, { index: this.blocks++, quorum: 0, animatingQuorum: principalWeightOfQuorum, added: new Date().getTime() });
-					} else {
-						this.electionChartData.set(block, { index: this.blocks++, quorum: principalWeightOfQuorum, animatingQuorum: 0, added: new Date().getTime() });
-					}
+					this.addNewBlock(block, principalWeightOfQuorum);
 				}
 			} else {
-				if (this.smooth) {
-					this.electionChartData.set(block, { index: this.blocks++, quorum: 0, animatingQuorum: principalWeightOfQuorum, added: new Date().getTime() });
-				} else {
-					this.electionChartData.set(block, { index: this.blocks++, quorum: principalWeightOfQuorum, animatingQuorum: 0, added: new Date().getTime() });
-				}
+				this.addNewBlock(block, principalWeightOfQuorum);
 			}
 
 			this.representativeStats.get(vote.message.account).voteCount++;
@@ -139,19 +166,16 @@ export class AppComponent implements OnInit, OnDestroy {
 
 		subjects.confirmations.subscribe(async confirmation => {
 			const block = confirmation.message.hash;
-			const item = this.electionChartData.get(block);
-			if (item) {
+			const index = this.blockToIndex.get(block);
+
+			if (index) {
 				if (this.smooth) {
-					item.animatingQuorum = 100 - item.quorum;
+					this.indexToAnimating.set(index, 100 - this.new[DataIndex.QUORUM][index]);
 				} else {
-					item.quorum = 100;
+					this.new[DataIndex.QUORUM][index] = 100;
 				}
 			} else {
-				if (this.smooth) {
-					this.electionChartData.set(block, { index: this.blocks++, quorum: 0, animatingQuorum: 100, added: new Date().getTime() });
-				} else {
-					this.electionChartData.set(block, { index: this.blocks++, quorum: 100, animatingQuorum: 0, added: new Date().getTime() });
-				}
+				this.addNewBlock(block, 100);
 			}
 			this.confirmations++;
 
@@ -165,9 +189,10 @@ export class AppComponent implements OnInit, OnDestroy {
 
 		subjects.stoppedElections.subscribe(async stoppedElection => {
 			const block = stoppedElection.message.hash;
-			const item = this.electionChartData.get(block);
-			if (item && item.quorum != null && item.quorum < 100) {
-				item.quorum = null;
+			const index = this.blockToIndex.get(block);
+			if (index && this.new[DataIndex.QUORUM][index] != 0 && this.new[DataIndex.QUORUM][index] < 100) {
+				this.new[DataIndex.QUORUM][index] = 0;
+				this.indexToAnimating.delete(index);
 				this.stoppedElections++;
 				this.electionChartRecentlyRemoved.add(block);
 				setTimeout(() => this.electionChartRecentlyRemoved.delete(block), 2000);
@@ -175,13 +200,41 @@ export class AppComponent implements OnInit, OnDestroy {
 		});
 	}
 
-	async buildElectionChart() {
-		const chartElement = document.getElementById('electionChart');
-		chartElement.innerHTML = '';
+	addNewBlock(block, quorum) {
+		const index = this.blocks++;
+		const added = this.getTimeInSeconds();
+		this.blockToIndex.set(block, index);
 
-		const paths = this.graphStyle == GraphStyle.LINES
-				? uPlot.paths.bars({ align: 1, size: [1, 20] })
-				: () => null;
+		if (this.smooth) {
+			this.new[DataIndex.INDEX][index] = index;
+			this.new[DataIndex.ADDED][index] = added;
+			this.new[DataIndex.QUORUM][index] = 0;
+			this.indexToAnimating.set(index, quorum);
+		} else {
+			this.new[DataIndex.INDEX][index] = index;
+			this.new[DataIndex.ADDED][index] = added;
+			this.new[DataIndex.QUORUM][index] = quorum;
+		}
+	}
+
+	async buildElectionChart() {
+		const series = this.graphStyle == GraphStyle.LINES ? {
+			label: 'Quorum %',
+			paths: uPlot.paths.bars({ align: 1, size: [1, 20] }),
+			pxAlign: 0,
+			spanGaps: false,
+			points: {
+				show: false,
+			},
+			fill: 'rgba(74, 144, 226, 1)',
+			width: 1 / devicePixelRatio,
+			max: 100,
+		} : {
+			paths: () => null,
+			points: {
+				show: false,
+			},
+		};
 
 		const opts: uPlot.Options = {
 			title: '',
@@ -196,13 +249,18 @@ export class AppComponent implements OnInit, OnDestroy {
 			},
 			scales: {
 				'x': {
-					time: false,
+					time: true,
 					range: (u, dataMin, dataMax) => {
-						return [dataMin, dataMax];
+						if (this.graphStyle == GraphStyle.LINES) {
+							return [dataMin, dataMax];
+						} else {
+							return [dataMin, this.getTimeInSeconds() - 0.05];
+						}
 					},
 				},
 				'y': {
 					range: (u, dataMin, dataMax) => [0, 100],
+					auto: false,
 				}
 			},
 			axes: [
@@ -221,25 +279,17 @@ export class AppComponent implements OnInit, OnDestroy {
 				},
 			],
 			series: [
-				{},
 				{
-					label: 'Quorum %',
-					paths,
-					pxAlign: 0,
-					spanGaps: false,
 					points: {
 						show: false,
 					},
-					fill: 'rgba(74, 144, 226, 1)',
-					width: 1 / devicePixelRatio,
-					max: 100,
 				},
+				series,
 			],
 			hooks: {
 				draw: [(u: uPlot) => {
 					if (this.graphStyle == GraphStyle.HEATMAP) {
 						const { ctx, data } = u;
-
 						let yData = data[1];
 
 						ctx.beginPath();
@@ -264,7 +314,15 @@ export class AppComponent implements OnInit, OnDestroy {
 			}
 		};
 
+		const chartElement = document.getElementById('electionChart');
+		chartElement.innerHTML = '';
 		this.electionChart = new uPlot(opts, [[], []], chartElement);
+	}
+
+	changeUseMaxFps() {
+		this.useMaxFPS = !this.useMaxFPS;
+		localStorage.setItem('nv-max-fps', this.useMaxFPS ? 'true' : 'false');
+		this.startInterval();
 	}
 
 	changeFps(e: any) {
@@ -288,70 +346,90 @@ export class AppComponent implements OnInit, OnDestroy {
 		this.smooth = !this.smooth;
 		localStorage.setItem('nv-smooth', this.smooth ? 'true' : 'false');
 		if (!this.smooth) {
-			for (const data of this.electionChartData.values()) {
-				if (data.animatingQuorum > 0) {
-					data.quorum = Math.min(data.animatingQuorum, 100);
-					data.animatingQuorum = 0;
-				}
+			for (const [index, animating] of this.indexToAnimating.entries()) {
+				this.new[DataIndex.QUORUM][index] = Math.min(this.new[DataIndex.QUORUM][index] + animating, 100);
 			}
+			this.indexToAnimating.clear();
 		}
 	}
 
 	async startInterval() {
 		this.stopInterval();
-
-		if (this.fps == 0) {
-			return;
-		}
-
-		this.pageUpdateInterval = setInterval(async () => {
-			if (this.electionChartData.size > 0) {
-				const x = [];
-				const y = [];
-				const now = new Date().getTime();
-				const tooOld = now - (1000 * 60 * this.timeframe);
-				Array.from(this.electionChartData.values()).forEach(i => {
-					if (tooOld < i.added) {
-						if (this.smooth) {
-							this.animate(i);
-						}
-
-						x.push(i.index);
-						y.push(i.quorum);
-					} else if (this.smooth) {
-						i.quorum += i.animatingQuorum;
-						i.animatingQuorum = 0;
-					}
-				});
-				this.electionChart.setData([x, y]);
-
-				const elapsedTimeInSeconds = (now - this.startTime.getTime()) / 1000;
-				this.cps = (this.confirmations / elapsedTimeInSeconds).toFixed(4);
-
-				this.changeDetectorRef.markForCheck();
+		if (this.useMaxFPS) {
+			const startAnimation = () => {
+				this.update();
+				this.pageUpdateInterval = requestAnimationFrame(startAnimation);
 			}
-		}, 1000 / this.fps);
+			startAnimation();
+		} else if (this.fps != 0) {
+			this.pageUpdateInterval = setInterval(() => {
+				this.update();
+			}, 1000 / this.fps);
+		}
 	}
 
-	async animate(i: DataItem) {
-		if (i.animatingQuorum > 0 && i.quorum < 100) {
-			if (i.animatingQuorum > 1) {
-				i.animatingQuorum--;
-				i.quorum++;
+	update() {
+		if (this.new.length > 0) {
+			const now = this.getTimeInSeconds();
+			const tooOld = now - (60 * this.timeframe);
+			const lastTooOldIndex = Util.binarySearchNearestIndex(this.new[DataIndex.ADDED], tooOld);
+			let x, y;
+			if (lastTooOldIndex > 0) {
+				x = this.new[DataIndex.ADDED].slice(lastTooOldIndex);
+				y = this.new[DataIndex.QUORUM].slice(lastTooOldIndex);
 			} else {
-				i.quorum += i.animatingQuorum;
-				i.animatingQuorum = 0;
+				x = this.new[DataIndex.ADDED];
+				y = this.new[DataIndex.QUORUM];
 			}
-			if (i.quorum > 100) {
-				i.quorum = 100;
-				i.animatingQuorum = 0;
+
+			// Fill out the timeline even though new data hasn't come by
+			const lastAdded = this.new[DataIndex.ADDED][this.new[DataIndex.INDEX].length - 1];
+			if (now > lastAdded) {
+				const nextIndex = this.blocks++;
+				this.new[DataIndex.INDEX][nextIndex] = nextIndex;
+				this.new[DataIndex.ADDED][nextIndex] = now;
+				this.new[DataIndex.QUORUM][nextIndex] = null;
 			}
+
+			this.electionChart.setData([x, y]);
+
+			const elapsedTimeInSeconds = now - this.startTime;
+			this.cps = (this.confirmations / elapsedTimeInSeconds).toFixed(4);
+
+			this.changeDetectorRef.markForCheck();
 		}
+	}
+
+	startAnimationInterval() {
+		const increment = 1.5;
+		this.animationInterval = setInterval(() => {
+			if (this.smooth && this.new[DataIndex.INDEX].length) {
+				const tooOld = this.getTimeInSeconds() - (60 * this.timeframe);
+				for (const [index, animating] of this.indexToAnimating.entries()) {
+					if (tooOld < this.new[DataIndex.ADDED][index]) {
+						if (animating > increment) {
+							this.new[DataIndex.QUORUM][index] += increment;
+							this.indexToAnimating.set(index, animating - increment);
+						} else {
+							this.new[DataIndex.QUORUM][index] += animating;
+							this.indexToAnimating.delete(index);
+						}
+						if (this.new[DataIndex.QUORUM][index] > 100) {
+							this.new[DataIndex.QUORUM][index] = 100;
+						}
+					} else {
+						this.new[DataIndex.QUORUM][index] += animating;
+						this.indexToAnimating.delete(index);
+					}
+				}
+			}
+		}, 40);
 	}
 
 	stopInterval() {
 		if (this.pageUpdateInterval) {
 			clearInterval(this.pageUpdateInterval);
+			cancelAnimationFrame(this.pageUpdateInterval);
 			this.pageUpdateInterval = undefined;
 		}
 	}
@@ -361,16 +439,12 @@ export class AppComponent implements OnInit, OnDestroy {
 			console.log('Upkeep triggered...');
 			await this.ws.updatePrincipalsAndQuorum();
 
-			const toDeleteBlocks = [];
-			const now = new Date().getTime();
-			const tooOld = now - (1000 * 60 * this.maxTimeframe);
-			for (const [key, value] of this.electionChartData.entries()) {
-				if (tooOld > value.added) {
-					toDeleteBlocks.push(key);
-				}
-			}
-
-			toDeleteBlocks.forEach(item => this.electionChartData.delete(item));
+			const now = this.getTimeInSeconds();
+			const tooOld = now - (60 * (this.maxTimeframe + 0.2));
+			const lastTooOldIndex = Util.binarySearchNearestIndex(this.new[DataIndex.ADDED], tooOld);
+			this.new[DataIndex.INDEX].splice(0, lastTooOldIndex);
+			this.new[DataIndex.ADDED].splice(0, lastTooOldIndex);
+			this.new[DataIndex.QUORUM].splice(0, lastTooOldIndex);
 
 			for (const principal of this.ws.principals) {
 				const stat = this.representativeStats.get(principal.account);
@@ -379,7 +453,6 @@ export class AppComponent implements OnInit, OnDestroy {
 					stat.weight = this.ws.principalWeights.get(principal.account) / this.ws.onlineStake;
 				}
 			}
-
 		}, 1000 * 60 * this.maxTimeframe / 2);
 	}
 
@@ -402,4 +475,10 @@ export enum GraphStyle {
 	X0,
 	LINES,
 	HEATMAP,
+}
+
+export enum DataIndex {
+	INDEX,
+	ADDED,
+	QUORUM,
 }

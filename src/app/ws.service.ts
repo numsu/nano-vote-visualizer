@@ -3,6 +3,7 @@ import { tools } from 'nanocurrency-web';
 import { Subject } from 'rxjs';
 import { delay, retryWhen, tap } from 'rxjs/operators';
 import { WebSocketSubject, webSocket } from 'rxjs/webSocket';
+import { environment } from 'src/environments/environment';
 
 import { HttpClient } from '@angular/common/http';
 import { Injectable } from "@angular/core";
@@ -10,8 +11,9 @@ import { Injectable } from "@angular/core";
 @Injectable()
 export class NanoWebsocketService {
 
-	wsUrl = 'wss://nanows.numsu.dev';
-	rpcUrl = 'https://nanoproxy.numsu.dev/proxy';
+	readonly wsUrl = environment.wsUrl;
+	readonly rpcUrl = environment.rpcUrl;
+	readonly principalsUrl = environment.principalsUrl;
 
 	principals: Principal[] = [];
 	principalWeights = new Map<string, number>();
@@ -32,8 +34,8 @@ export class NanoWebsocketService {
 		this.socket.pipe(
 			retryWhen(errors =>
 				errors.pipe(tap(e =>
-					console.error('WS Error', e),
-					delay(5000),
+					console.error('Socket encountered an error, retrying...', e),
+					delay(2000),
 				))
 			)
 		);
@@ -52,6 +54,11 @@ export class NanoWebsocketService {
 				default:
 					break;
 			}
+		}, e => {
+			console.error('Socket has encountered an error', e);
+			this.socket.error(e);
+			this.socket.complete();
+			this.socket.hasError = true;
 		});
 
 		this.socket.next({
@@ -83,15 +90,26 @@ export class NanoWebsocketService {
 	}
 
 	checkAndReconnectSocket() {
-		if (this.socket && this.socket.closed) {
+		if (this.socket?.hasError) {
+			console.log('Socket encountered an error, reconnecting...');
+			this.socket.complete();
 			this.subscribe();
 		}
 	}
 
 	async updatePrincipalsAndQuorum() {
 		try {
-			this.principals = await this.http.get<Principal[]>('https://mynano.ninja/api/accounts/principals').toPromise();
-			this.principals.forEach(p => this.principalWeights.set(p.account, new BigNumber(p.votingweight).shiftedBy(-30).toNumber()));
+			if (environment.network == 'live') {
+				this.principals = await this.http.get<Principal[]>(this.principalsUrl).toPromise();
+				this.principals.forEach(p => this.principalWeights.set(p.account, new BigNumber(p.votingweight).shiftedBy(-30).toNumber()));
+			} else {
+				this.principals = (await this.http.get<BetaPrincipal[]>(this.principalsUrl).toPromise()).map(i => ({
+					account: i.nanoNodeAccount,
+					alias: i.name || i.nanoNodeAccount,
+					votingweight: i.weight,
+				} as Principal));
+				this.principals.forEach(p => this.principalWeights.set(p.account, p.votingweight));
+			}
 
 			const quorumResponse = await this.http.post<ConfirmationQuorumResponse>(this.rpcUrl, {
 				'action': 'confirmation_quorum'
@@ -110,6 +128,13 @@ export interface Subscriptions {
 	votes: Subject<Vote>;
 	confirmations: Subject<Confirmation>;
 	stoppedElections: Subject<StoppedElection>;
+}
+
+export interface BetaPrincipal {
+	name: string;
+	nanoNodeAccount: string;
+	weight : number;
+	cementedBlocks: number;
 }
 
 export interface Principal {
