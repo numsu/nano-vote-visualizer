@@ -1,6 +1,7 @@
+import * as fc from 'd3fc';
+import * as d3 from 'd3';
 import { tools } from 'nanocurrency-web';
 import { environment } from 'src/environments/environment';
-import uPlot from 'uplot';
 
 import { ChangeDetectionStrategy, ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
 import { faChevronDown, faChevronUp } from '@fortawesome/free-solid-svg-icons';
@@ -16,38 +17,38 @@ import { ConfirmationMessage, NanoWebsocketService } from './ws.service';
 })
 export class AppComponent implements OnInit, OnDestroy {
 
+	// Icons
 	downArrow = faChevronDown;
 	upArrow = faChevronUp;
 
+	// Intervals
 	pageUpdateInterval: any;
 	upkeepInterval: any;
 	wsHealthCheckInterval: any;
 	animationInterval: any;
 
-	electionChart: uPlot;
-	electionChartRecentlyRemoved = new Set<string>();
+	electionChart: any;
 
+	// Data
 	blockToIndex = new Map<string, number>();
 	indexToAnimating = new Map<number, number>();
-	new = [[], [], []];	// Index, Added, quorum
-
+	data = [[], []]; // Added, quorum
 	latestConfirmations: ConfirmationMessage[] = [];
 	representativeStats = new Map<string, RepsetentativeStatItem>();
+	electionChartRecentlyRemoved = new Set<string>();
 
 	// User defined settings
 	fps: number;
 	timeframe: number;
 	graphStyle: GraphStyle = 2;
 
-	// Counters
 	blocks = 0;
 	stoppedElections = 0;
 	confirmations = 0;
 	cps = '0';
 	smooth = true;
 	useMaxFPS = true;
-
-	startTime = this.getTimeInSeconds();
+	startTime = new Date().getTime() / 1000;
 	showSettings = false;
 	minIndex = 0;
 
@@ -87,8 +88,8 @@ export class AppComponent implements OnInit, OnDestroy {
 	}
 
 	initSettings() {
-		this.fps = Math.min(+localStorage.getItem('nv-fps') || 8, this.maxFps);
-		this.timeframe = Math.min(+localStorage.getItem('nv-timeframe') || 1, this.maxTimeframe);
+		this.fps = Math.min(+localStorage.getItem('nv-fps') || 24, this.maxFps);
+		this.timeframe = Math.min(+localStorage.getItem('nv-timeframe') || 5, this.maxTimeframe);
 		this.graphStyle = +localStorage.getItem('nv-style') || GraphStyle.HEATMAP;
 		this.smooth = (localStorage.getItem('nv-smooth') || 'true') == 'true';
 		this.useMaxFPS = (localStorage.getItem('nv-max-fps') || 'true') == 'true';
@@ -109,11 +110,8 @@ export class AppComponent implements OnInit, OnDestroy {
 		});
 	}
 
-	getTimeInSeconds(date?: Date): number {
-		if (!date) {
-			date = new Date();
-		}
-		return date.getTime() / 1000;
+	getTimeInSeconds(): number {
+		return (new Date().getTime() / 1000) - this.startTime;
 	}
 
 	async start() {
@@ -128,15 +126,15 @@ export class AppComponent implements OnInit, OnDestroy {
 			const principalWeightOfQuorum = principalWeightPercent / this.ws.quorumPercent * 100;
 
 			if (index) {
-				if (this.new[DataIndex.QUORUM][index] != 0) {
-					const previousQuorum = this.new[DataIndex.QUORUM][index];
+				if (this.data[DataIndex.QUORUM][index] != 0) {
+					const previousQuorum = this.data[DataIndex.QUORUM][index];
 					const newQuorum = previousQuorum + principalWeightOfQuorum;
 
 					if (newQuorum > 100) {
 						if (this.smooth) {
 							this.indexToAnimating.set(index, 100 - previousQuorum);
 						} else {
-							this.new[DataIndex.QUORUM][index] = 100;
+							this.data[DataIndex.QUORUM][index] = 100;
 							this.indexToAnimating.delete(index);
 						}
 					} else {
@@ -151,7 +149,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
 							this.indexToAnimating.set(index, newAnimating);
 						} else {
-							this.new[DataIndex.QUORUM][index] += principalWeightOfQuorum;
+							this.data[DataIndex.QUORUM][index] += principalWeightOfQuorum;
 						}
 					}
 				} else if (!this.electionChartRecentlyRemoved.has(block)) {
@@ -170,9 +168,9 @@ export class AppComponent implements OnInit, OnDestroy {
 
 			if (index) {
 				if (this.smooth) {
-					this.indexToAnimating.set(index, 100 - this.new[DataIndex.QUORUM][index]);
+					this.indexToAnimating.set(index, 100 - this.data[DataIndex.QUORUM][index]);
 				} else {
-					this.new[DataIndex.QUORUM][index] = 100;
+					this.data[DataIndex.QUORUM][index] = 100;
 				}
 			} else {
 				this.addNewBlock(block, 100);
@@ -190,8 +188,8 @@ export class AppComponent implements OnInit, OnDestroy {
 		subjects.stoppedElections.subscribe(async stoppedElection => {
 			const block = stoppedElection.message.hash;
 			const index = this.blockToIndex.get(block);
-			if (index && this.new[DataIndex.QUORUM][index] != 0 && this.new[DataIndex.QUORUM][index] < 100) {
-				this.new[DataIndex.QUORUM][index] = 0;
+			if (index && this.data[DataIndex.QUORUM][index] != 0 && this.data[DataIndex.QUORUM][index] < 100) {
+				this.data[DataIndex.QUORUM][index] = 0;
 				this.indexToAnimating.delete(index);
 				this.stoppedElections++;
 				this.electionChartRecentlyRemoved.add(block);
@@ -200,123 +198,116 @@ export class AppComponent implements OnInit, OnDestroy {
 		});
 	}
 
-	addNewBlock(block, quorum) {
+	addNewBlock(block: string, quorum: number) {
 		const index = this.blocks++;
 		const added = this.getTimeInSeconds();
 		this.blockToIndex.set(block, index);
 
 		if (this.smooth) {
-			this.new[DataIndex.INDEX][index] = index;
-			this.new[DataIndex.ADDED][index] = added;
-			this.new[DataIndex.QUORUM][index] = 0;
+			this.data[DataIndex.ADDED][index] = added;
+			this.data[DataIndex.QUORUM][index] = 0;
 			this.indexToAnimating.set(index, quorum);
 		} else {
-			this.new[DataIndex.INDEX][index] = index;
-			this.new[DataIndex.ADDED][index] = added;
-			this.new[DataIndex.QUORUM][index] = quorum;
+			this.data[DataIndex.ADDED][index] = added;
+			this.data[DataIndex.QUORUM][index] = quorum;
 		}
 	}
 
 	async buildElectionChart() {
-		const series = this.graphStyle == GraphStyle.LINES ? {
-			label: 'Quorum %',
-			paths: uPlot.paths.bars({ align: 1, size: [1, 20] }),
-			pxAlign: 0,
-			spanGaps: false,
-			points: {
-				show: false,
-			},
-			fill: 'rgba(74, 144, 226, 1)',
-			width: 1 / devicePixelRatio,
-			max: 100,
-		} : {
-			paths: () => null,
-			points: {
-				show: false,
-			},
-		};
+		const xScale = d3.scaleLinear().domain([0, 1000]);
+		const yScale = d3.scaleLinear().domain([0, 101]);
 
-		const opts: uPlot.Options = {
-			title: '',
-			id: '1',
-			class: 'chart',
-			width: window.innerWidth - 17,
-			height: 600,
-			padding: [20, 10, 0, -10],
-			pxAlign: 0,
-			cursor: {
-				show: false,
-			},
-			scales: {
-				'x': {
-					time: true,
-					range: (u, dataMin, dataMax) => {
-						if (this.graphStyle == GraphStyle.LINES) {
-							return [dataMin, dataMax];
-						} else {
-							return [dataMin, this.getTimeInSeconds() - 0.05];
-						}
-					},
-				},
-				'y': {
-					range: (u, dataMin, dataMax) => [0, 100],
-					auto: false,
-				}
-			},
-			axes: [
-				{
-					stroke: '#c7d0d9',
-					grid: {
-						width: 1 / devicePixelRatio,
-						stroke: "#2c3235",
-					},
-				}, {
-					stroke: '#c7d0d9',
-					grid: {
-						width: 1 / devicePixelRatio,
-						stroke: "#2c3235",
-					},
-				},
-			],
-			series: [
-				{
-					points: {
-						show: false,
-					},
-				},
-				series,
-			],
-			hooks: {
-				draw: [(u: uPlot) => {
-					if (this.graphStyle == GraphStyle.HEATMAP) {
-						const { ctx, data } = u;
-						let yData = data[1];
+		const yearColorScale = d3
+				.scaleSequential()
+				.domain([0, 100])
+				.interpolator(d3.interpolateRdYlGn);
 
-						ctx.beginPath();
-						ctx.rect(u.bbox.left, u.bbox.top, u.bbox.width, u.bbox.height);
-						ctx.clip();
+		const webglColor = color => {
+			if (color) {
+				const { r, g, b, opacity } = d3.color(color).rgb();
+				return [r / 255, g / 255, b / 255, opacity];
+			} else {
+				return [0, 0, 0, 0];
+			}
+		}
 
-						yData.forEach((yVal, xi) => {
-							let xPos = Math.round(u.valToPos(data[0][xi], 'x', true));
-							let yPos = Math.round(u.valToPos(yVal, 'y', true));
-							const green = 255 * (yVal / 100);
-							const red = 150 - yVal || 0;
-							ctx.fillStyle = `rgba(${red}, ${green}, 0, 0.5)`;
-							ctx.fillRect(
-								xPos,
-								yPos,
-								5,
-								5,
-							);
+		const fillColor = (<any>fc)
+				.webglFillColor()
+				.value(item => webglColor(yearColorScale(item.y)))
+				.data(this.data);
+
+		this.electionChart = document.querySelector('d3fc-canvas');
+		const series = (<any>fc)
+				.seriesWebglPoint()
+				.xScale(xScale)
+				.yScale(yScale)
+				.size(10)
+				.crossValue(data => data.x)
+				.mainValue(data => data.y)
+				.defined(() => true)
+				.equals((_, __) => false)
+				.decorate(program => fillColor(program));
+
+		let pixels = null;
+		let gl = null;
+
+		d3.select(this.electionChart)
+				.on('measure', event => {
+					const { width, height } = event.detail;
+					xScale.range([0, width]);
+					yScale.range([height, 0]);
+					gl = this.electionChart.querySelector('canvas').getContext('webgl');
+					series.context(gl);
+				})
+				.on('draw', () => {
+					if (pixels == null) {
+						pixels = new Uint8Array(
+							gl.drawingBufferWidth * gl.drawingBufferHeight * 4
+						);
+					}
+
+					const now = this.getTimeInSeconds();
+					const tooOld = now - (60 * this.timeframe);
+					const lastTooOldIndex = Util.binarySearchNearestIndex(this.data[DataIndex.ADDED], tooOld);
+					let x, y;
+					if (lastTooOldIndex > 0) {
+						x = this.data[DataIndex.ADDED].slice(lastTooOldIndex);
+						y = this.data[DataIndex.QUORUM].slice(lastTooOldIndex);
+					} else {
+						x = this.data[DataIndex.ADDED];
+						y = this.data[DataIndex.QUORUM];
+					}
+
+					// Fill out the timeline even though new data hasn't come by
+					const lastAdded = this.data[DataIndex.ADDED][this.data[DataIndex.ADDED].length - 1];
+					if (now > lastAdded) {
+						const nextIndex = this.blocks++;
+						this.data[DataIndex.ADDED][nextIndex] = now;
+						this.data[DataIndex.QUORUM][nextIndex] = null;
+					}
+
+					const data = [];
+					for (let i = 0; i < x.length; i++) {
+						data.push({
+							x: x[i],
+							y: y[i],
 						});
 					}
-				}]
-			}
-		};
 
-		const chartElement = document.getElementById('electionChart');
-		chartElement.innerHTML = '';
-		this.electionChart = new uPlot(opts, [[], []], chartElement);
+					fillColor.data(data);
+					series(data);
+					xScale.domain([ this.data[DataIndex.ADDED][lastTooOldIndex], this.data[DataIndex.ADDED][this.data[DataIndex.ADDED].length - 1] ]);
+
+					gl.readPixels(
+						0,
+						0,
+						gl.drawingBufferWidth,
+						gl.drawingBufferHeight,
+						gl.RGBA,
+						gl.UNSIGNED_BYTE,
+						pixels
+					);
+				});
 	}
 
 	changeUseMaxFps() {
@@ -347,7 +338,7 @@ export class AppComponent implements OnInit, OnDestroy {
 		localStorage.setItem('nv-smooth', this.smooth ? 'true' : 'false');
 		if (!this.smooth) {
 			for (const [index, animating] of this.indexToAnimating.entries()) {
-				this.new[DataIndex.QUORUM][index] = Math.min(this.new[DataIndex.QUORUM][index] + animating, 100);
+				this.data[DataIndex.QUORUM][index] = Math.min(this.data[DataIndex.QUORUM][index] + animating, 100);
 			}
 			this.indexToAnimating.clear();
 		}
@@ -369,61 +360,38 @@ export class AppComponent implements OnInit, OnDestroy {
 	}
 
 	update() {
-		if (this.new.length > 0) {
+		if (this.data.length > 0) {
 			const now = this.getTimeInSeconds();
-			const tooOld = now - (60 * this.timeframe);
-			const lastTooOldIndex = Util.binarySearchNearestIndex(this.new[DataIndex.ADDED], tooOld);
-			let x, y;
-			if (lastTooOldIndex > 0) {
-				x = this.new[DataIndex.ADDED].slice(lastTooOldIndex);
-				y = this.new[DataIndex.QUORUM].slice(lastTooOldIndex);
-			} else {
-				x = this.new[DataIndex.ADDED];
-				y = this.new[DataIndex.QUORUM];
-			}
-
-			// Fill out the timeline even though new data hasn't come by
-			const lastAdded = this.new[DataIndex.ADDED][this.new[DataIndex.INDEX].length - 1];
-			if (now > lastAdded) {
-				const nextIndex = this.blocks++;
-				this.new[DataIndex.INDEX][nextIndex] = nextIndex;
-				this.new[DataIndex.ADDED][nextIndex] = now;
-				this.new[DataIndex.QUORUM][nextIndex] = null;
-			}
-
-			this.electionChart.setData([x, y]);
-
-			const elapsedTimeInSeconds = now - this.startTime;
-			this.cps = (this.confirmations / elapsedTimeInSeconds).toFixed(4);
-
+			this.cps = (this.confirmations / now).toFixed(4);
+			this.electionChart.requestRedraw();
 			this.changeDetectorRef.markForCheck();
 		}
 	}
 
 	startAnimationInterval() {
-		const increment = 1.5;
+		const increment = 0.8;
 		this.animationInterval = setInterval(() => {
-			if (this.smooth && this.new[DataIndex.INDEX].length) {
+			if (this.smooth && this.data[DataIndex.ADDED].length) {
 				const tooOld = this.getTimeInSeconds() - (60 * this.timeframe);
 				for (const [index, animating] of this.indexToAnimating.entries()) {
-					if (tooOld < this.new[DataIndex.ADDED][index]) {
+					if (tooOld < this.data[DataIndex.ADDED][index]) {
 						if (animating > increment) {
-							this.new[DataIndex.QUORUM][index] += increment;
+							this.data[DataIndex.QUORUM][index] += increment;
 							this.indexToAnimating.set(index, animating - increment);
 						} else {
-							this.new[DataIndex.QUORUM][index] += animating;
+							this.data[DataIndex.QUORUM][index] += animating;
 							this.indexToAnimating.delete(index);
 						}
-						if (this.new[DataIndex.QUORUM][index] > 100) {
-							this.new[DataIndex.QUORUM][index] = 100;
+						if (this.data[DataIndex.QUORUM][index] > 100) {
+							this.data[DataIndex.QUORUM][index] = 100;
 						}
 					} else {
-						this.new[DataIndex.QUORUM][index] += animating;
+						this.data[DataIndex.QUORUM][index] += animating;
 						this.indexToAnimating.delete(index);
 					}
 				}
 			}
-		}, 40);
+		}, 20);
 	}
 
 	stopInterval() {
@@ -441,10 +409,9 @@ export class AppComponent implements OnInit, OnDestroy {
 
 			const now = this.getTimeInSeconds();
 			const tooOld = now - (60 * (this.maxTimeframe + 0.2));
-			const lastTooOldIndex = Util.binarySearchNearestIndex(this.new[DataIndex.ADDED], tooOld);
-			this.new[DataIndex.INDEX].splice(0, lastTooOldIndex);
-			this.new[DataIndex.ADDED].splice(0, lastTooOldIndex);
-			this.new[DataIndex.QUORUM].splice(0, lastTooOldIndex);
+			const lastTooOldIndex = Util.binarySearchNearestIndex(this.data[DataIndex.ADDED], tooOld);
+			this.data[DataIndex.ADDED].splice(0, lastTooOldIndex);
+			this.data[DataIndex.QUORUM].splice(0, lastTooOldIndex);
 
 			for (const principal of this.ws.principals) {
 				const stat = this.representativeStats.get(principal.account);
@@ -458,13 +425,6 @@ export class AppComponent implements OnInit, OnDestroy {
 
 }
 
-export interface DataItem {
-	index: number;
-	quorum: number;
-	animatingQuorum: number;
-	added: number;
-}
-
 export interface RepsetentativeStatItem {
 	weight: number;
 	alias: string;
@@ -473,12 +433,10 @@ export interface RepsetentativeStatItem {
 
 export enum GraphStyle {
 	X0,
-	LINES,
 	HEATMAP,
 }
 
 export enum DataIndex {
-	INDEX,
 	ADDED,
 	QUORUM,
 }

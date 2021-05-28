@@ -8,9 +8,6 @@
 			<div class="setting-container">
 				<h2>Graph style</h2>
 				<div class="setting">
-					<label for="graphLines">Lines</label>
-					<input type="radio" id="graphLines" name="graphStyle" [checked]="graphStyle == 1" (input)="changeGraphStyle(1)">
-					<br>
 					<label for="graphHeatmap">Heatmap</label>
 					<input type="radio" id="graphHeatmap" name="graphStyle" [checked]="graphStyle == 2" (input)="changeGraphStyle(2)">
 				</div>
@@ -31,7 +28,7 @@
 		</div>
 	</div>
 
-	<div id="electionChart"></div>
+	<d3fc-canvas id="electionChart"></d3fc-canvas>
 
 	<div class="stats-container">
 		<div class="stat-container">

@@ -1,6 +1,6 @@
 # Nano vote visualizer
 
-This project was generated with [Angular CLI](https://github.com/angular/angular-cli) version 12.0.0.
+This app visualizes all of the elections which are happening on the Nano network on a graph. It's live at https://nanovisual.numsu.dev
 
 ## Development server
 

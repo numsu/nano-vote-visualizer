@@ -31,8 +31,7 @@
 							"src/assets"
 						],
 						"styles": [
-							"src/styles.sass",
-							"node_modules/uplot/dist/uPlot.min.css"
+							"src/styles.sass"
 						],
 						"scripts": [
 						]
