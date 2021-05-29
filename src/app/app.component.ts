@@ -122,38 +122,29 @@ export class AppComponent implements OnInit, OnDestroy {
 			const principalWeightPercent = principalWeight / this.ws.onlineStake * 100;
 			const principalWeightOfQuorum = principalWeightPercent / this.ws.quorumPercent * 100;
 
-			if (index) {
-				const item = this.data[index];
-				if (item) {
-					const previousQuorum = item.quorum;
-					const newQuorum = previousQuorum + principalWeightOfQuorum;
+			const item = this.data[index];
+			if (index && item) {
+				const previousQuorum = item.quorum;
+				const newQuorum = previousQuorum + principalWeightOfQuorum;
 
-					if (newQuorum > 100) {
-						if (this.smooth) {
-							this.indexToAnimating.set(index, 100 - previousQuorum);
-						} else {
-							item.quorum = 100;
-							this.indexToAnimating.delete(index);
-						}
+				if (newQuorum >= 100) {
+					if (this.smooth) {
+						this.indexToAnimating.set(index, 100 - previousQuorum);
 					} else {
-						if (this.smooth) {
-							const previous = this.indexToAnimating.get(index);
-							let newAnimating;
-							if (previous) {
-								newAnimating = previous + principalWeightOfQuorum;
-							} else {
-								newAnimating = principalWeightOfQuorum;
-							}
-
-							this.indexToAnimating.set(index, newAnimating);
-						} else {
-							item.quorum += principalWeightOfQuorum;
-						}
+						item.quorum = 100;
+						this.indexToAnimating.delete(index);
 					}
-				} else if (!this.electionChartRecentlyRemoved.has(block)) {
-					this.addNewBlock(block, principalWeightOfQuorum);
+				} else {
+					if (this.smooth) {
+						const previousAnimating = this.indexToAnimating.get(index);
+						this.indexToAnimating.set(index, previousAnimating
+								? previousAnimating + principalWeightOfQuorum
+								: principalWeightOfQuorum);
+					} else {
+						item.quorum = Math.max(item.quorum + principalWeightOfQuorum, 100);
+					}
 				}
-			} else {
+			} else if (!this.electionChartRecentlyRemoved.has(block)) {
 				this.addNewBlock(block, principalWeightOfQuorum);
 			}
 
@@ -234,7 +225,7 @@ export class AppComponent implements OnInit, OnDestroy {
 				.domain([0, 100])
 				.interpolator(d3.interpolateRdYlGn);
 
-		const webglColor = color => {
+		const webglColor = (color: string) => {
 			if (color) {
 				const { r, g, b, opacity } = d3.color(color).rgb();
 				return [r / 255, g / 255, b / 255, opacity];
@@ -293,8 +284,8 @@ export class AppComponent implements OnInit, OnDestroy {
 
 							// Animate only the ones which are currently rendered, just increment the quorum of others
 							if (start < item.added) {
-								// Interpolate linear increments down to a minimum increment of 0.1 to save resources
-								const increment = Math.max(Util.lerp(0, 100, animating * 0.0006), 0.1);
+								// Interpolate linear increments down to a minimum increment of 0.13 to save resources
+								const increment = Math.max(Util.lerp(0, 100, animating * 0.0006), 0.13);
 
 								// If the increment is smaller than the remainder animation, keep animating
 								// Else add the rest of remaining animation. Cap quorum at 100
@@ -338,7 +329,7 @@ export class AppComponent implements OnInit, OnDestroy {
 					fillColor.data(displayedData);
 					series(displayedData);
 
-					// Set the displayed are to be from start time to current time
+					// Set the displayed area to be from start time to current time
 					xScale.domain([ Math.max(start, 0), now ]);
 
 					gl.readPixels(

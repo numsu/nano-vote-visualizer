@@ -1,7 +1,7 @@
 <div class="content">
 	<div class="header">
 		<h1>{{ network == 'live' ? 'Live' : 'Beta' }} Nano election visualization</h1>
-		<span>Every item in the visualization is a block waiting to be validated. When the quorum reaches 100%, the block is confirmed. This data is based on the perspective of a single <a [href]="'https://mynano.ninja/account/' + hostAccount" target="_blank">node</a>.</span><br>
+		<span>Every item in the visualization is a block waiting to be validated. When the quorum reaches 100%, the block is confirmed. This data is based on the perspective of a single <a [href]="repInfoUrl + '/account/' + hostAccount" target="_blank">node</a>.</span><br>
 		<span>You can change settings below to display more data. Larger time frame will degrade performance.</span><br><br>
 		<div class="settings-trigger" (click)="showSettings = !showSettings"><fa-icon [icon]="showSettings ? upArrow : downArrow"></fa-icon></div>
 		<div class="settings-container" *ngIf="showSettings">
