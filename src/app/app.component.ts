@@ -17,6 +17,8 @@ import { ConfirmationMessage, NanoWebsocketService } from './ws.service';
 })
 export class AppComponent implements OnInit, OnDestroy {
 
+	electionChart: any;
+
 	// Icons
 	downArrow = faChevronDown;
 	upArrow = faChevronUp;
@@ -25,35 +27,33 @@ export class AppComponent implements OnInit, OnDestroy {
 	pageUpdateInterval: any;
 	upkeepInterval: any;
 	wsHealthCheckInterval: any;
-	animationInterval: any;
 
-	electionChart: any;
-
-	// Data
-	blockToIndex = new Map<string, number>();
-	indexToAnimating = new Map<number, number>();
-	data = [[], []]; // Added, quorum
-	latestConfirmations: ConfirmationMessage[] = [];
-	representativeStats = new Map<string, RepsetentativeStatItem>();
-	electionChartRecentlyRemoved = new Set<string>();
+	// Data handling
+	readonly data = [[], []]; // Added, quorum
+	readonly blockToIndex = new Map<string, number>();
+	readonly indexToAnimating = new Map<number, number>();
+	readonly latestConfirmations: ConfirmationMessage[] = [];
+	readonly representativeStats = new Map<string, RepsetentativeStatItem>();
+	readonly electionChartRecentlyRemoved = new Set<string>();
+	readonly startTime = new Date().getTime() / 1000;
 
 	// User defined settings
 	fps: number;
 	timeframe: number;
 	graphStyle: GraphStyle = 2;
+	smooth = true;
+	useMaxFPS = true;
+	showSettings = false;
 
+	// Counters
 	blocks = 0;
 	stoppedElections = 0;
 	confirmations = 0;
 	cps = '0';
-	smooth = true;
-	useMaxFPS = true;
-	startTime = new Date().getTime() / 1000;
-	showSettings = false;
-	minIndex = 0;
 
+	// Environment settings
 	readonly network = environment.network;
-	readonly maxTimeframe = 10;
+	readonly maxTimeframeMinutes = 10;
 	readonly maxFps = 60;
 	readonly hostAccount = environment.hostAccount;
 	readonly explorerUrl = environment.explorerUrl;
@@ -71,14 +71,10 @@ export class AppComponent implements OnInit, OnDestroy {
 		if (this.wsHealthCheckInterval) {
 			clearInterval(this.wsHealthCheckInterval);
 		}
-		if (this.animationInterval) {
-			clearInterval(this.animationInterval);
-		}
 	}
 
 	async ngOnInit() {
 		this.startUpkeepInterval();
-		this.startAnimationInterval();
 		this.initSettings();
 		this.buildElectionChart();
 		this.startInterval();
@@ -89,7 +85,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
 	initSettings() {
 		this.fps = Math.min(+localStorage.getItem('nv-fps') || 24, this.maxFps);
-		this.timeframe = Math.min(+localStorage.getItem('nv-timeframe') || 5, this.maxTimeframe);
+		this.timeframe = Math.min(+localStorage.getItem('nv-timeframe') || 5, this.maxTimeframeMinutes);
 		this.graphStyle = +localStorage.getItem('nv-style') || GraphStyle.HEATMAP;
 		this.smooth = (localStorage.getItem('nv-smooth') || 'true') == 'true';
 		this.useMaxFPS = (localStorage.getItem('nv-max-fps') || 'true') == 'true';
@@ -110,7 +106,7 @@ export class AppComponent implements OnInit, OnDestroy {
 		});
 	}
 
-	getTimeInSeconds(): number {
+	getRelativeTimeInSeconds(): number {
 		return (new Date().getTime() / 1000) - this.startTime;
 	}
 
@@ -126,7 +122,7 @@ export class AppComponent implements OnInit, OnDestroy {
 			const principalWeightOfQuorum = principalWeightPercent / this.ws.quorumPercent * 100;
 
 			if (index) {
-				if (this.data[DataIndex.QUORUM][index] != 0) {
+				if (!isNaN(this.data[DataIndex.QUORUM][index])) {
 					const previousQuorum = this.data[DataIndex.QUORUM][index];
 					const newQuorum = previousQuorum + principalWeightOfQuorum;
 
@@ -167,7 +163,7 @@ export class AppComponent implements OnInit, OnDestroy {
 			const index = this.blockToIndex.get(block);
 
 			if (index) {
-				if (this.smooth) {
+				if (this.smooth && !isNaN(this.data[DataIndex.QUORUM][index])) {
 					this.indexToAnimating.set(index, 100 - this.data[DataIndex.QUORUM][index]);
 				} else {
 					this.data[DataIndex.QUORUM][index] = 100;
@@ -188,19 +184,26 @@ export class AppComponent implements OnInit, OnDestroy {
 		subjects.stoppedElections.subscribe(async stoppedElection => {
 			const block = stoppedElection.message.hash;
 			const index = this.blockToIndex.get(block);
-			if (index && this.data[DataIndex.QUORUM][index] != 0 && this.data[DataIndex.QUORUM][index] < 100) {
-				this.data[DataIndex.QUORUM][index] = 0;
-				this.indexToAnimating.delete(index);
+			if (index && !isNaN(this.data[DataIndex.QUORUM][index]) && this.data[DataIndex.QUORUM][index] < 100) {
+				this.data[DataIndex.QUORUM][index] = null;
 				this.stoppedElections++;
 				this.electionChartRecentlyRemoved.add(block);
-				setTimeout(() => this.electionChartRecentlyRemoved.delete(block), 2000);
+				setTimeout(() => this.electionChartRecentlyRemoved.delete(block), 500);
 			}
+
+			this.blockToIndex.delete(block);
+			this.indexToAnimating.delete(index);
 		});
 	}
 
 	addNewBlock(block: string, quorum: number) {
+		const previousIndex = this.blockToIndex.get(block);
+		if (previousIndex) {
+			return;
+		}
+
 		const index = this.blocks++;
-		const added = this.getTimeInSeconds();
+		const added = this.getRelativeTimeInSeconds();
 		this.blockToIndex.set(block, index);
 
 		if (this.smooth) {
@@ -266,9 +269,9 @@ export class AppComponent implements OnInit, OnDestroy {
 						);
 					}
 
-					const now = this.getTimeInSeconds();
-					const tooOld = now - (60 * this.timeframe);
-					const lastTooOldIndex = Util.binarySearchNearestIndex(this.data[DataIndex.ADDED], tooOld);
+					const now = this.getRelativeTimeInSeconds();
+					const start = now - (60 * this.timeframe);
+					const lastTooOldIndex = Util.binarySearchNearestIndex(this.data[DataIndex.ADDED], start);
 					let x, y;
 					if (lastTooOldIndex > 0) {
 						x = this.data[DataIndex.ADDED].slice(lastTooOldIndex);
@@ -276,6 +279,32 @@ export class AppComponent implements OnInit, OnDestroy {
 					} else {
 						x = this.data[DataIndex.ADDED];
 						y = this.data[DataIndex.QUORUM];
+					}
+
+					if (this.smooth) {
+						for (const [index, animating] of this.indexToAnimating.entries()) {
+							if (isNaN(this.data[DataIndex.QUORUM][index]) || isNaN(animating)) {
+								this.indexToAnimating.delete(index);
+								continue;
+							}
+							// Animate only the ones which are visible
+							if (start < this.data[DataIndex.ADDED][index]) {
+								const increment = Util.lerp(0, 100, animating * 0.0006);
+								if (animating > increment) {
+									this.data[DataIndex.QUORUM][index] += increment;
+									this.indexToAnimating.set(index, animating - increment);
+								} else {
+									this.data[DataIndex.QUORUM][index] += animating;
+									this.indexToAnimating.delete(index);
+								}
+								if (this.data[DataIndex.QUORUM][index] > 100) {
+									this.data[DataIndex.QUORUM][index] = 100;
+								}
+							} else {
+								this.data[DataIndex.QUORUM][index] += animating;
+								this.indexToAnimating.delete(index);
+							}
+						}
 					}
 
 					// Fill out the timeline even though new data hasn't come by
@@ -296,7 +325,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
 					fillColor.data(data);
 					series(data);
-					xScale.domain([ this.data[DataIndex.ADDED][lastTooOldIndex], this.data[DataIndex.ADDED][this.data[DataIndex.ADDED].length - 1] ]);
+					xScale.domain([ Math.max(start, 0), now ]);
 
 					gl.readPixels(
 						0,
@@ -337,11 +366,17 @@ export class AppComponent implements OnInit, OnDestroy {
 		this.smooth = !this.smooth;
 		localStorage.setItem('nv-smooth', this.smooth ? 'true' : 'false');
 		if (!this.smooth) {
-			for (const [index, animating] of this.indexToAnimating.entries()) {
+			this.clearAnimatingQueue();
+		}
+	}
+
+	clearAnimatingQueue() {
+		for (const [index, animating] of this.indexToAnimating.entries()) {
+			if (!isNaN(this.data[DataIndex.QUORUM][index])) {
 				this.data[DataIndex.QUORUM][index] = Math.min(this.data[DataIndex.QUORUM][index] + animating, 100);
 			}
-			this.indexToAnimating.clear();
 		}
+		this.indexToAnimating.clear();
 	}
 
 	async startInterval() {
@@ -361,37 +396,11 @@ export class AppComponent implements OnInit, OnDestroy {
 
 	update() {
 		if (this.data.length > 0) {
-			const now = this.getTimeInSeconds();
+			const now = this.getRelativeTimeInSeconds();
 			this.cps = (this.confirmations / now).toFixed(4);
 			this.electionChart.requestRedraw();
 			this.changeDetectorRef.markForCheck();
 		}
-	}
-
-	startAnimationInterval() {
-		const increment = 0.8;
-		this.animationInterval = setInterval(() => {
-			if (this.smooth && this.data[DataIndex.ADDED].length) {
-				const tooOld = this.getTimeInSeconds() - (60 * this.timeframe);
-				for (const [index, animating] of this.indexToAnimating.entries()) {
-					if (tooOld < this.data[DataIndex.ADDED][index]) {
-						if (animating > increment) {
-							this.data[DataIndex.QUORUM][index] += increment;
-							this.indexToAnimating.set(index, animating - increment);
-						} else {
-							this.data[DataIndex.QUORUM][index] += animating;
-							this.indexToAnimating.delete(index);
-						}
-						if (this.data[DataIndex.QUORUM][index] > 100) {
-							this.data[DataIndex.QUORUM][index] = 100;
-						}
-					} else {
-						this.data[DataIndex.QUORUM][index] += animating;
-						this.indexToAnimating.delete(index);
-					}
-				}
-			}
-		}, 20);
 	}
 
 	stopInterval() {
@@ -407,11 +416,23 @@ export class AppComponent implements OnInit, OnDestroy {
 			console.log('Upkeep triggered...');
 			await this.ws.updatePrincipalsAndQuorum();
 
-			const now = this.getTimeInSeconds();
-			const tooOld = now - (60 * (this.maxTimeframe + 0.2));
-			const lastTooOldIndex = Util.binarySearchNearestIndex(this.data[DataIndex.ADDED], tooOld);
-			this.data[DataIndex.ADDED].splice(0, lastTooOldIndex);
-			this.data[DataIndex.QUORUM].splice(0, lastTooOldIndex);
+			const now = this.getRelativeTimeInSeconds();
+			const tooOld = Math.max(now - (60 * this.maxTimeframeMinutes), 0);
+			let lastTooOldIndex = 0;
+
+			for (let i = 0; i < this.data[DataIndex.ADDED].length; i++) {
+				if (tooOld > this.data[DataIndex.ADDED][i]) {
+					delete this.data[DataIndex.ADDED][i];
+					delete this.data[DataIndex.QUORUM][i];
+					lastTooOldIndex = i;
+				}
+			}
+
+			for (const index of this.indexToAnimating.keys()) {
+				if (index < lastTooOldIndex) {
+					this.indexToAnimating.delete(index);
+				}
+			}
 
 			for (const principal of this.ws.principals) {
 				const stat = this.representativeStats.get(principal.account);
@@ -420,7 +441,7 @@ export class AppComponent implements OnInit, OnDestroy {
 					stat.weight = this.ws.principalWeights.get(principal.account) / this.ws.onlineStake;
 				}
 			}
-		}, 1000 * 60 * this.maxTimeframe / 2);
+		}, 1000 * 60 * this.maxTimeframeMinutes);
 	}
 
 }

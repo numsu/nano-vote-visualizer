@@ -22,4 +22,8 @@ export class Util {
 					: mid;
 	}
 
+	static lerp(min: number, max: number, interpolation: number): number {
+		return min * (1 - interpolation) + max * interpolation
+	}
+
 }
