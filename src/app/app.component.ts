@@ -32,6 +32,7 @@ export class AppComponent implements OnInit, OnDestroy {
 	readonly data: ElectionChartData[] = [];
 	readonly blockToIndex = new Map<string, number>();
 	readonly indexToAnimating = new Map<number, number>();
+	readonly repToBlocks = new Map<string, Set<string>>();
 	readonly latestConfirmations: ConfirmationMessage[] = [];
 	readonly representativeStats = new Map<string, RepsetentativeStatItem>();
 	readonly electionChartRecentlyRemoved = new Set<string>();
@@ -99,6 +100,7 @@ export class AppComponent implements OnInit, OnDestroy {
 				alias = '*** ' + alias;
 			}
 
+			this.repToBlocks.set(principal.account, new Set());
 			this.representativeStats.set(principal.account, {
 				weight: this.ws.principalWeights.get(principal.account) / this.ws.onlineStake,
 				alias,
@@ -123,32 +125,45 @@ export class AppComponent implements OnInit, OnDestroy {
 			const principalWeightOfQuorum = principalWeightPercent / this.ws.quorumPercent * 100;
 
 			const item = this.data[index];
-			if (index && item) {
-				const previousQuorum = item.quorum;
-				const newQuorum = previousQuorum + principalWeightOfQuorum;
 
-				if (newQuorum >= 100) {
-					if (this.smooth) {
-						this.indexToAnimating.set(index, 100 - previousQuorum);
-					} else {
-						item.quorum = 100;
-						this.indexToAnimating.delete(index);
+			// The node is reporting representative votes which are already counted, only count first occurrences
+			const blocks = this.repToBlocks.get(vote.message.account);
+			if (!blocks.has(vote.message.blocks[0])) {
+				if (index && item) {
+					const previousQuorum = item.quorum;
+					const newQuorum = previousQuorum + principalWeightOfQuorum;
+
+					if (item.quorum != 100) {
+						if (newQuorum >= 100) {
+							if (this.smooth) {
+								this.indexToAnimating.set(index, 100 - previousQuorum);
+							} else {
+								item.quorum = 100;
+								this.indexToAnimating.delete(index);
+							}
+						} else {
+							if (this.smooth) {
+								const previousAnimating = this.indexToAnimating.get(index);
+								let newAnimating = principalWeightOfQuorum;
+								if (previousAnimating) {
+									newAnimating = Math.max(previousAnimating + principalWeightOfQuorum, 100);
+									if (newAnimating + item.quorum > 100) {
+										newAnimating = 100 - item.quorum;
+									}
+								}
+								this.indexToAnimating.set(index, newAnimating);
+							} else {
+								item.quorum = Math.max(item.quorum + principalWeightOfQuorum, 100);
+							}
+						}
 					}
-				} else {
-					if (this.smooth) {
-						const previousAnimating = this.indexToAnimating.get(index);
-						this.indexToAnimating.set(index, previousAnimating
-								? previousAnimating + principalWeightOfQuorum
-								: principalWeightOfQuorum);
-					} else {
-						item.quorum = Math.max(item.quorum + principalWeightOfQuorum, 100);
-					}
+				} else if (!this.electionChartRecentlyRemoved.has(block)) {
+					this.addNewBlock(block, principalWeightOfQuorum);
 				}
-			} else if (!this.electionChartRecentlyRemoved.has(block)) {
-				this.addNewBlock(block, principalWeightOfQuorum);
-			}
 
-			this.representativeStats.get(vote.message.account).voteCount++;
+				blocks.add(vote.message.blocks[0]);
+				this.representativeStats.get(vote.message.account).voteCount++;
+			}
 		});
 
 		subjects.confirmations.subscribe(async confirmation => {
@@ -277,7 +292,7 @@ export class AppComponent implements OnInit, OnDestroy {
 						for (const [index, animating] of this.indexToAnimating.entries()) {
 							// Delete the queued animation if the target is no longer present
 							const item = this.data[index];
-							if (!item || isNaN(animating)) {
+							if (!item || isNaN(animating) || item.quorum == 100) {
 								this.indexToAnimating.delete(index);
 								continue;
 							}
@@ -285,22 +300,19 @@ export class AppComponent implements OnInit, OnDestroy {
 							// Animate only the ones which are currently rendered, just increment the quorum of others
 							if (start < item.added) {
 								// Interpolate linear increments down to a minimum increment of 0.13 to save resources
-								const increment = Math.max(Util.lerp(0, 100, animating * 0.0006), 0.13);
+								const increment = Math.max(Util.lerp(0, item.quorum + animating, animating / (item.quorum + animating) / 20), 0.1);
 
 								// If the increment is smaller than the remainder animation, keep animating
 								// Else add the rest of remaining animation. Cap quorum at 100
 								if (animating > increment) {
-									item.quorum += increment;
+									item.quorum = Math.min(item.quorum + increment, 100);
 									this.indexToAnimating.set(index, animating - increment);
 								} else {
-									item.quorum += animating;
+									item.quorum = Math.min(item.quorum + animating, 100);
 									this.indexToAnimating.delete(index);
 								}
-								if (item.quorum > 100) {
-									item.quorum = 100;
-								}
 							} else {
-								item.quorum += animating;
+								item.quorum = Math.min(item.quorum + animating, 100);
 								this.indexToAnimating.delete(index);
 							}
 						}
