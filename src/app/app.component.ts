@@ -128,7 +128,7 @@ export class AppComponent implements OnInit, OnDestroy {
 				return;
 			}
 
-			const principalWeightPercent = new BigNumber(principalWeight).div(new BigNumber(this.ws.onlineStake)).times(100);
+			const principalWeightPercent = new BigNumber(principalWeight).div(new BigNumber(this.ws.quorumDelta)).times(100);
 			const blocks = this.repToBlocks.get(vote.message.account);
 
 			for (const block of vote.message.blocks) {
