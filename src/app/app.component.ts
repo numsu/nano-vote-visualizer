@@ -8,6 +8,7 @@ import { faChevronDown, faChevronUp } from '@fortawesome/free-solid-svg-icons';
 
 import { Util } from './util';
 import { ConfirmationMessage, NanoWebsocketService } from './ws.service';
+import BigNumber from 'bignumber.js';
 
 @Component({
 	selector: 'app-root',
@@ -118,51 +119,55 @@ export class AppComponent implements OnInit, OnDestroy {
 		this.wsHealthCheckInterval = setInterval(() => this.ws.checkAndReconnectSocket(), 2000);
 
 		subjects.votes.subscribe(async vote => {
-			const block = vote.message.blocks[0];
-			const index = this.blockToIndex.get(block);
+			if (vote.message.timestamp != '18446744073709551615') { // Only count final votes
+				return;
+			}
+
 			const principalWeight = this.ws.principalWeights.get(vote.message.account);
-			const principalWeightPercent = principalWeight / this.ws.onlineStake * 100;
-			const principalWeightOfQuorum = principalWeightPercent / this.ws.quorumPercent * 100;
-
-			const item = this.data[index];
-
-			// The node is reporting representative votes which are already counted, only count first occurrences
+			const principalWeightPercent = new BigNumber(principalWeight).div(new BigNumber(this.ws.quorumDelta)).times(100);
 			const blocks = this.repToBlocks.get(vote.message.account);
-			if (!blocks.has(vote.message.blocks[0])) {
-				if (index && item) {
-					const previousQuorum = item.quorum;
-					const newQuorum = previousQuorum + principalWeightOfQuorum;
 
-					if (item.quorum != 100) {
-						if (newQuorum >= 100) {
-							if (this.smooth) {
-								this.indexToAnimating.set(index, 100 - previousQuorum);
-							} else {
-								item.quorum = 100;
-								this.indexToAnimating.delete(index);
-							}
-						} else {
-							if (this.smooth) {
-								const previousAnimating = this.indexToAnimating.get(index);
-								let newAnimating = principalWeightOfQuorum;
-								if (previousAnimating) {
-									newAnimating = Math.max(previousAnimating + principalWeightOfQuorum, 100);
-									if (newAnimating + item.quorum > 100) {
-										newAnimating = 100 - item.quorum;
-									}
+			for (const block of vote.message.blocks) {
+				const index = this.blockToIndex.get(block);
+				const item = this.data[index];
+
+				// The node is reporting representative votes which are already counted, only count first occurrences
+				if (!blocks.has(vote.message.blocks[0])) {
+					blocks.add(vote.message.blocks[0]);
+					if (index !== undefined && item) {
+						const previousQuorum = item.quorum;
+
+						if (previousQuorum < 100) {
+							const newQuorum = new BigNumber(previousQuorum).plus(principalWeightPercent);
+							if (newQuorum.isGreaterThanOrEqualTo(100)) {
+								if (this.smooth) {
+									this.indexToAnimating.set(index, 100 - previousQuorum);
+								} else {
+									item.quorum = 100;
+									this.indexToAnimating.delete(index);
 								}
-								this.indexToAnimating.set(index, newAnimating);
 							} else {
-								item.quorum = Math.max(item.quorum + principalWeightOfQuorum, 100);
+								if (this.smooth) {
+									const previousAnimating = this.indexToAnimating.get(index);
+									let newAnimating = principalWeightPercent.toNumber();
+									if (previousAnimating) {
+										newAnimating = Math.max(principalWeightPercent.plus(previousAnimating).toNumber(), 100);
+										if (newAnimating + previousQuorum > 100) {
+											newAnimating = 100 - previousQuorum;
+										}
+									}
+									this.indexToAnimating.set(index, newAnimating);
+								} else {
+									item.quorum = Math.max(principalWeightPercent.plus(previousQuorum).toNumber(), 100);
+								}
 							}
 						}
+					} else if (!this.electionChartRecentlyRemoved.has(block)) {
+						this.addNewBlock(block, principalWeightPercent.toNumber());
 					}
-				} else if (!this.electionChartRecentlyRemoved.has(block)) {
-					this.addNewBlock(block, principalWeightOfQuorum);
-				}
 
-				blocks.add(vote.message.blocks[0]);
-				this.representativeStats.get(vote.message.account).voteCount++;
+					this.representativeStats.get(vote.message.account).voteCount++;
+				}
 			}
 		});
 
@@ -170,7 +175,7 @@ export class AppComponent implements OnInit, OnDestroy {
 			const block = confirmation.message.hash;
 			const index = this.blockToIndex.get(block);
 			const item = this.data[index];
-			if (index && item) {
+			if (index !== undefined && item) {
 				if (this.smooth && !isNaN(item.quorum)) {
 					this.indexToAnimating.set(index, 100 - item.quorum);
 				} else {
@@ -192,16 +197,18 @@ export class AppComponent implements OnInit, OnDestroy {
 		subjects.stoppedElections.subscribe(async stoppedElection => {
 			const block = stoppedElection.message.hash;
 			const index = this.blockToIndex.get(block);
-			const item = this.data[index];
-			if (item?.quorum < 100) {
-				item.quorum = null;
-				this.stoppedElections++;
-				this.electionChartRecentlyRemoved.add(block);
-				setTimeout(() => this.electionChartRecentlyRemoved.delete(block), 500);
-			}
+			if (index !== undefined) {
+				const item = this.data[index];
+				if (item?.quorum < 100) {
+					item.quorum = null;
+					this.stoppedElections++;
+					this.electionChartRecentlyRemoved.add(block);
+					setTimeout(() => this.electionChartRecentlyRemoved.delete(block), 500);
+				}
 
-			this.blockToIndex.delete(block);
-			this.indexToAnimating.delete(index);
+				this.blockToIndex.delete(block);
+				this.indexToAnimating.delete(index);
+			}
 		});
 	}
 
@@ -292,7 +299,7 @@ export class AppComponent implements OnInit, OnDestroy {
 						for (const [index, animating] of this.indexToAnimating.entries()) {
 							// Delete the queued animation if the target is no longer present
 							const item = this.data[index];
-							if (!item || isNaN(animating) || item.quorum == 100) {
+							if (!item || isNaN(animating) || item.quorum >= 100) {
 								this.indexToAnimating.delete(index);
 								continue;
 							}

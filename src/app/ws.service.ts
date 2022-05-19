@@ -17,7 +17,7 @@ export class NanoWebsocketService {
 
 	principals: Principal[] = [];
 	principalWeights = new Map<string, number>();
-	quorumPercent: number;
+	quorumDelta: number;
 	onlineStake: number;
 
 	voteSubscription = new Subject<Vote>();
@@ -115,8 +115,8 @@ export class NanoWebsocketService {
 				'action': 'confirmation_quorum'
 			}).toPromise();
 
-			this.quorumPercent = Number(quorumResponse.online_weight_quorum_percent);
 			this.onlineStake = new BigNumber(tools.convert(quorumResponse.online_stake_total, 'RAW', 'NANO')).toNumber();
+			this.quorumDelta = new BigNumber(tools.convert(quorumResponse.quorum_delta, 'RAW', 'NANO')).toNumber();
 		} catch (e) {
 			console.error('Error updaging principals and quorum', e);
 		}
@@ -157,6 +157,7 @@ export interface VoteMessage {
 	sequence: string;
 	blocks: string[];
 	type: string;
+	timestamp: string;
 }
 
 export interface Confirmation extends ResponseBase {
