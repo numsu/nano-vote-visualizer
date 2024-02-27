@@ -19,8 +19,8 @@ jobs:
           npm install
           npm run build:live
       - name: Deploy 🚀
-        uses: JamesIves/github-pages-deploy-action@releases/v3
+        uses: JamesIves/github-pages-deploy-action@releases/v4
         with:
-          ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
-          BRANCH: gh-pages
-          FOLDER: dist/nano-vote-visualizer
+          access_token: ${{ secrets.ACCESS_TOKEN }}
+          branch: gh-pages
+          folder: dist/nano-vote-visualizer
